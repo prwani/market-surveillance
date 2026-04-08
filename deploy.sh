@@ -38,6 +38,8 @@ DEPLOY_OUTPUT=$(az deployment group create \
   --output json)
 
 # Parse outputs
+FABRIC_CAPACITY=$(echo "${DEPLOY_OUTPUT}" | jq -r '.properties.outputs.fabricCapacityName.value')
+FABRIC_CAPACITY_ID=$(echo "${DEPLOY_OUTPUT}" | jq -r '.properties.outputs.fabricCapacityId.value')
 EH_NAMESPACE=$(echo "${DEPLOY_OUTPUT}" | jq -r '.properties.outputs.eventHubNamespace.value')
 ADX_URI=$(echo "${DEPLOY_OUTPUT}" | jq -r '.properties.outputs.adxClusterUri.value')
 ADX_DB=$(echo "${DEPLOY_OUTPUT}" | jq -r '.properties.outputs.adxDatabaseName.value')
@@ -67,13 +69,21 @@ else
   echo "  ⚠ init-kql-tables.sh not found — skipping table init"
 fi
 
+echo "[6/7] Setting up Fabric workspace..."
+if [[ -f "${SCRIPT_DIR}/scripts/setup-fabric-workspace.sh" ]]; then
+  bash "${SCRIPT_DIR}/scripts/setup-fabric-workspace.sh" "${FABRIC_CAPACITY_ID}" "${PROJECT}" "${ENV}"
+else
+  echo "  ⚠ setup-fabric-workspace.sh not found — skipping Fabric workspace setup"
+fi
+
 # ── Print summary ─────────────────────────────────────────
-echo "[6/6] Deployment complete!"
+echo "[7/7] Deployment complete!"
 echo ""
 echo "═══════════════════════════════════════════════════════"
 echo " Deployment Summary"
 echo "═══════════════════════════════════════════════════════"
 echo " Resource Group      : ${RESOURCE_GROUP}"
+echo " Fabric Capacity     : ${FABRIC_CAPACITY} (${FABRIC_CAPACITY_ID})"
 echo " Event Hubs Namespace: ${EH_NAMESPACE}"
 echo " ADX Cluster URI     : ${ADX_URI}"
 echo " ADX Database        : ${ADX_DB}"

@@ -14,6 +14,13 @@ param environmentName string
 @maxLength(15)
 param projectName string
 
+@description('Fabric capacity SKU (F2, F4, F8, F16, F32, F64)')
+@allowed(['F2', 'F4', 'F8', 'F16', 'F32', 'F64'])
+param fabricSku string = 'F8'
+
+@description('Fabric capacity admin UPN')
+param fabricAdminUpn string
+
 var tags = {
   project: projectName
   environment: environmentName
@@ -33,6 +40,21 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
       name: 'PerGB2018'
     }
     retentionInDays: 30
+  }
+}
+
+// ──────────────────────────────────────────────
+// Microsoft Fabric Capacity — RTI + FabricIQ
+// ──────────────────────────────────────────────
+module fabricCapacity 'modules/fabric-capacity.bicep' = {
+  name: 'fabricCapacityDeploy'
+  params: {
+    location: location
+    environmentName: environmentName
+    projectName: projectName
+    tags: tags
+    skuName: fabricSku
+    adminUpn: fabricAdminUpn
   }
 }
 
@@ -141,6 +163,15 @@ module containerApp 'modules/container-app.bicep' = {
 // ──────────────────────────────────────────────
 // Outputs
 // ──────────────────────────────────────────────
+@description('Fabric capacity name')
+output fabricCapacityName string = fabricCapacity.outputs.capacityName
+
+@description('Fabric capacity ID')
+output fabricCapacityId string = fabricCapacity.outputs.capacityId
+
+@description('Fabric capacity SKU')
+output fabricCapacitySku string = fabricCapacity.outputs.capacitySku
+
 @description('Event Hubs namespace name')
 output eventHubNamespace string = eventHubs.outputs.namespaceName
 
