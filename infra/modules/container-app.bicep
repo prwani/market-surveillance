@@ -1,4 +1,4 @@
-// Container App Environment and surveillance agent app
+// Container App Environment and surveillance dashboard
 @description('Azure region for deployment')
 param location string
 
@@ -20,6 +20,12 @@ param logAnalyticsSharedKey string
 
 @description('Key Vault name for secret references')
 param keyVaultName string
+
+@description('ACR login server (e.g. myacr.azurecr.io)')
+param acrLoginServer string
+
+@description('Fabric Eventhouse KQL URI')
+param kqlUri string = ''
 
 var envName = '${projectName}-cae-${environmentName}'
 var appName = '${projectName}-agent-${environmentName}'
@@ -50,28 +56,16 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
     managedEnvironmentId: containerAppEnv.id
     configuration: {
       ingress: {
-        external: false
+        external: true
         targetPort: 8080
         transport: 'http'
       }
-      secrets: [
-        {
-          name: 'eventhub-connection'
-          keyVaultUrl: 'https://${keyVaultName}${environment().suffixes.keyvaultDns}/secrets/eventhub-connection-string'
-          identity: 'System'
-        }
-        {
-          name: 'kql-cluster-uri'
-          keyVaultUrl: 'https://${keyVaultName}${environment().suffixes.keyvaultDns}/secrets/kql-cluster-uri'
-          identity: 'System'
-        }
-      ]
     }
     template: {
       containers: [
         {
-          name: 'surveillance-agent'
-          image: 'mcr.microsoft.com/azurelinux/base/python:3.12'
+          name: 'surveillance-dashboard'
+          image: '${acrLoginServer}/market-surveillance:latest'
           resources: {
             cpu: json('0.5')
             memory: '1Gi'
@@ -82,15 +76,11 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
               value: environmentName
             }
             {
-              name: 'EVENTHUB_CONNECTION_STRING'
-              secretRef: 'eventhub-connection'
+              name: 'KQL_URI'
+              value: kqlUri
             }
             {
-              name: 'KQL_CLUSTER_URI'
-              secretRef: 'kql-cluster-uri'
-            }
-            {
-              name: 'KQL_DATABASE'
+              name: 'KQL_DB'
               value: 'surveillance'
             }
             {
@@ -131,16 +121,14 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         }
       ]
       scale: {
-        minReplicas: 0
+        minReplicas: 1
         maxReplicas: 3
         rules: [
           {
-            name: 'eventhub-scaling'
-            custom: {
-              type: 'azure-eventhub'
+            name: 'http-scaling'
+            http: {
               metadata: {
-                consumerGroup: 'pattern-detection'
-                unprocessedEventThreshold: '64'
+                concurrentRequests: '50'
               }
             }
           }
@@ -158,6 +146,9 @@ output environmentId string = containerAppEnv.id
 
 @description('Container App name')
 output appName string = containerApp.name
+
+@description('Container App FQDN')
+output appFqdn string = containerApp.properties.configuration.ingress.fqdn
 
 @description('Container App principal ID')
 output appPrincipalId string = containerApp.identity.principalId

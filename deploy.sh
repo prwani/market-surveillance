@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploy Market Surveillance infrastructure to Azure
-# KQL database runs inside Fabric Eventhouse (not standalone ADX)
+# Architecture: Fabric Eventhouse (KQL) + Eventstreams + Container Apps (dashboard)
 set -euo pipefail
 
 SUBSCRIPTION_ID="23835f6b-9ad7-4c33-b0b8-55157ad0d2b5"
@@ -18,11 +18,11 @@ echo " Location      : ${LOCATION}"
 echo "═══════════════════════════════════════════════════════"
 
 # ── Set subscription ──────────────────────────────────────
-echo "[1/6] Setting Azure subscription..."
+echo "[1/8] Setting Azure subscription..."
 az account set --subscription "${SUBSCRIPTION_ID}"
 
 # ── Create resource group ─────────────────────────────────
-echo "[2/6] Creating resource group ${RESOURCE_GROUP}..."
+echo "[2/8] Creating resource group ${RESOURCE_GROUP}..."
 az group create \
   --name "${RESOURCE_GROUP}" \
   --location "${LOCATION}" \
@@ -30,12 +30,13 @@ az group create \
   --output none
 
 # ── Deploy Bicep template ─────────────────────────────────
-echo "[3/6] Deploying Bicep infrastructure (Fabric F8 + Container Apps)..."
+echo "[3/8] Deploying infrastructure (Fabric F8 + ACR + Container Apps)..."
+DEPLOY_NAME="surveillance-${ENV}-$(date +%Y%m%d%H%M%S)"
 DEPLOY_OUTPUT=$(az deployment group create \
   --resource-group "${RESOURCE_GROUP}" \
   --template-file "${SCRIPT_DIR}/infra/main.bicep" \
   --parameters "${SCRIPT_DIR}/infra/parameters/${ENV}.bicepparam" \
-  --name "surveillance-${ENV}-$(date +%Y%m%d%H%M%S)" \
+  --name "${DEPLOY_NAME}" \
   --output json)
 
 # Parse outputs
@@ -45,14 +46,26 @@ KV_NAME=$(echo "${DEPLOY_OUTPUT}" | jq -r '.properties.outputs.keyVaultName.valu
 STORAGE_NAME=$(echo "${DEPLOY_OUTPUT}" | jq -r '.properties.outputs.storageAccountName.value')
 CA_ENV=$(echo "${DEPLOY_OUTPUT}" | jq -r '.properties.outputs.containerAppEnvironment.value')
 CA_NAME=$(echo "${DEPLOY_OUTPUT}" | jq -r '.properties.outputs.containerAppName.value')
+ACR_LOGIN=$(echo "${DEPLOY_OUTPUT}" | jq -r '.properties.outputs.acrLoginServer.value')
+DASHBOARD_URL=$(echo "${DEPLOY_OUTPUT}" | jq -r '.properties.outputs.dashboardUrl.value')
+
+# ── Build and push dashboard image ────────────────────────
+echo "[4/8] Building and pushing dashboard Docker image..."
+az acr build \
+  --registry "${ACR_LOGIN%%.*}" \
+  --resource-group "${RESOURCE_GROUP}" \
+  --image market-surveillance:latest \
+  --file "${SCRIPT_DIR}/Dockerfile" \
+  "${SCRIPT_DIR}" \
+  --output none
 
 # ── Set up Fabric workspace + Eventhouse + KQL DB ─────────
-echo "[4/6] Setting up Fabric workspace and Eventhouse..."
+echo "[5/8] Setting up Fabric workspace and Eventhouse..."
 if [[ -f "${SCRIPT_DIR}/scripts/setup-fabric-workspace.sh" ]]; then
   bash "${SCRIPT_DIR}/scripts/setup-fabric-workspace.sh" "${FABRIC_CAPACITY_ID}" "${PROJECT}" "${ENV}"
 fi
 
-# Retrieve the Fabric Eventhouse KQL URI from the workspace
+# Discover Fabric Eventhouse KQL URI
 echo "  Discovering Fabric Eventhouse KQL endpoint..."
 FABRIC_TOKEN=$(az account get-access-token --resource "https://api.fabric.microsoft.com" --query accessToken -o tsv)
 WORKSPACE_NAME="${PROJECT}-surveillance-${ENV}"
@@ -69,35 +82,43 @@ if [[ -n "${WORKSPACE_ID}" ]]; then
 fi
 
 # ── Store secrets in Key Vault ────────────────────────────
-echo "[5/6] Storing connection strings in Key Vault..."
-# Eventstream connection info is set via scripts/setup-fabric-workspace.sh
-az keyvault secret set --vault-name "${KV_NAME}" --name "kql-cluster-uri" --value "${KQL_URI}" --output none
-az keyvault secret set --vault-name "${KV_NAME}" --name "kql-database-name" --value "surveillance" --output none
-az keyvault secret set --vault-name "${KV_NAME}" --name "storage-account-name" --value "${STORAGE_NAME}" --output none
+echo "[6/8] Storing secrets in Key Vault..."
+az keyvault secret set --vault-name "${KV_NAME}" --name "kql-cluster-uri" --value "${KQL_URI}" --output none 2>/dev/null || true
+az keyvault secret set --vault-name "${KV_NAME}" --name "kql-database-name" --value "surveillance" --output none 2>/dev/null || true
+az keyvault secret set --vault-name "${KV_NAME}" --name "storage-account-name" --value "${STORAGE_NAME}" --output none 2>/dev/null || true
 
 # ── Initialize KQL tables in Fabric Eventhouse ────────────
-echo "[6/6] Initializing KQL tables in Fabric Eventhouse..."
+echo "[7/8] Initializing KQL tables in Fabric Eventhouse..."
 if [[ -n "${KQL_URI}" && -f "${SCRIPT_DIR}/scripts/init-kql-tables.sh" ]]; then
   bash "${SCRIPT_DIR}/scripts/init-kql-tables.sh" "${KQL_URI}" "surveillance"
 else
   echo "  ⚠ Skipping table init — run scripts/init-kql-tables.sh manually"
 fi
 
+# ── Update Container App with KQL_URI env var ─────────────
+echo "[8/8] Configuring dashboard with Fabric Eventhouse endpoint..."
+if [[ -n "${KQL_URI}" ]]; then
+  az containerapp update \
+    --name "${CA_NAME}" \
+    --resource-group "${RESOURCE_GROUP}" \
+    --set-env-vars "KQL_URI=${KQL_URI}" "KQL_DB=surveillance" \
+    --output none 2>/dev/null || true
+fi
+
 # ── Print summary ─────────────────────────────────────────
 echo ""
 echo "═══════════════════════════════════════════════════════"
-echo " Deployment Summary"
+echo " Deployment Complete"
 echo "═══════════════════════════════════════════════════════"
-echo " Resource Group      : ${RESOURCE_GROUP}"
-echo " Fabric Capacity     : ${FABRIC_CAPACITY} (F8)"
-echo " Fabric Workspace    : ${WORKSPACE_NAME}"
-echo " Eventhouse KQL URI  : ${KQL_URI}"
-echo " Key Vault           : ${KV_NAME}"
-echo " Storage Account     : ${STORAGE_NAME}"
-echo " Container App Env   : ${CA_ENV}"
-echo " Container App       : ${CA_NAME}"
-echo "═══════════════════════════════════════════════════════"
+echo " Resource Group    : ${RESOURCE_GROUP}"
+echo " Fabric Capacity   : ${FABRIC_CAPACITY} (F8)"
+echo " Fabric Workspace  : ${WORKSPACE_NAME}"
+echo " Eventhouse KQL URI: ${KQL_URI}"
+echo " Container Registry: ${ACR_LOGIN}"
+echo " Key Vault         : ${KV_NAME}"
+echo " Storage Account   : ${STORAGE_NAME}"
 echo ""
-echo " KQL database 'surveillance' is hosted in Fabric Eventhouse"
-echo " (no standalone Azure Data Explorer cluster needed)"
+echo " ╔═══════════════════════════════════════════════════╗"
+echo " ║  Dashboard: ${DASHBOARD_URL}"
+echo " ╚═══════════════════════════════════════════════════╝"
 echo "═══════════════════════════════════════════════════════"

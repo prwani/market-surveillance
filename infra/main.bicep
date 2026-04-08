@@ -121,7 +121,23 @@ resource checkpointsContainer 'Microsoft.Storage/storageAccounts/blobServices/co
 }
 
 // ──────────────────────────────────────────────
-// Container App — surveillance agent runtime
+// Container Registry — dashboard image
+// ──────────────────────────────────────────────
+var acrName = replace('${projectName}acr', '-', '')
+resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
+  name: acrName
+  location: location
+  tags: tags
+  sku: {
+    name: 'Basic'
+  }
+  properties: {
+    adminUserEnabled: true
+  }
+}
+
+// ──────────────────────────────────────────────
+// Container App — surveillance dashboard
 // ──────────────────────────────────────────────
 module containerApp 'modules/container-app.bicep' = {
   name: 'containerAppDeploy'
@@ -133,6 +149,7 @@ module containerApp 'modules/container-app.bicep' = {
     logAnalyticsWorkspaceId: logAnalytics.properties.customerId
     logAnalyticsSharedKey: logAnalytics.listKeys().primarySharedKey
     keyVaultName: keyVault.name
+    acrLoginServer: acr.properties.loginServer
   }
 }
 
@@ -167,6 +184,12 @@ output containerAppEnvironment string = containerApp.outputs.environmentName
 
 @description('Container App name')
 output containerAppName string = containerApp.outputs.appName
+
+@description('Dashboard URL')
+output dashboardUrl string = 'https://${containerApp.outputs.appFqdn}'
+
+@description('Container Registry login server')
+output acrLoginServer string = acr.properties.loginServer
 
 @description('Storage Account name')
 output storageAccountName string = storageAccount.name
