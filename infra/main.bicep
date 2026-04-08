@@ -160,6 +160,17 @@ module containerApp 'modules/container-app.bicep' = {
   }
 }
 
+// Grant Container App's managed identity "Key Vault Secrets User" on the vault
+resource kvRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(keyVault.id, containerApp.name, '4633458b-17de-408a-b874-0445c86b69e6')
+  scope: keyVault
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
+    principalId: containerApp.outputs.appPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // ──────────────────────────────────────────────
 // Outputs
 // ──────────────────────────────────────────────

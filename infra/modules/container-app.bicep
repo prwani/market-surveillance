@@ -43,6 +43,9 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: appName
   location: location
   tags: tags
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
     managedEnvironmentId: containerAppEnv.id
     configuration: {
@@ -55,10 +58,12 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         {
           name: 'eventhub-connection'
           keyVaultUrl: 'https://${keyVaultName}${environment().suffixes.keyvaultDns}/secrets/eventhub-connection-string'
+          identity: 'System'
         }
         {
           name: 'adx-cluster-uri'
           keyVaultUrl: 'https://${keyVaultName}${environment().suffixes.keyvaultDns}/secrets/adx-cluster-uri'
+          identity: 'System'
         }
       ]
     }
@@ -154,5 +159,5 @@ output environmentId string = containerAppEnv.id
 @description('Container App name')
 output appName string = containerApp.name
 
-@description('Container App FQDN')
-output appFqdn string = containerApp.properties.configuration.ingress != null ? containerApp.properties.latestRevisionFqdn : ''
+@description('Container App principal ID')
+output appPrincipalId string = containerApp.identity.principalId

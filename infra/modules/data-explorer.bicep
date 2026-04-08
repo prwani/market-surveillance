@@ -19,7 +19,7 @@ resource adxCluster 'Microsoft.Kusto/clusters@2023-08-15' = {
   location: location
   tags: tags
   sku: {
-    name: 'Dev(No SLA)_Standard_E2a_v4'
+    name: 'Dev(No SLA)_Standard_D11_v2'
     tier: 'Basic'
     capacity: 1
   }
