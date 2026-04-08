@@ -1,0 +1,58 @@
+// =============================================================================
+// Wash Trading Detection — KQL Real-Time Rule
+// =============================================================================
+// Fabric Eventhouse / KQL Database: surveillance
+// Tables: TRADES, BROKER_OWNERSHIP
+// Recommended scheduling: Run every 5 minutes via Data Activator trigger
+//
+// Detection logic (mirrors README Section 5.2 — Pattern Detection Agent):
+//   Within a 10-minute rolling window, identify trades where:
+//     • buyer_id ≠ seller_id (accounts are different)
+//     • BUT both accounts share the same ultimate beneficial owner
+//       (via the BROKER_OWNERSHIP reference table)
+//     • AND ≥3 such trades exist for the same symbol/owner pair
+//
+// Notes:
+//   BROKER_OWNERSHIP is a reference/dimension table with columns:
+//     account_id (string), ultimate_owner (string)
+//
+// Output columns:
+//   event_time      — aggregation bucket
+//   symbol          — instrument
+//   ultimate_owner  — beneficial owner controlling both sides
+//   wash_count      — number of wash trades detected
+//   wash_volume     — total shares traded
+//   account_a       — one account ID
+//   account_b       — counterpart account ID
+// =============================================================================
+
+TRADES
+| where event_time > ago(10m)
+| where buyer_id != seller_id                                  // different account IDs
+| join kind=inner (
+    BROKER_OWNERSHIP
+    | project account_id, ultimate_owner_buyer = ultimate_owner
+) on $left.buyer_id == $right.account_id
+| join kind=inner (
+    BROKER_OWNERSHIP
+    | project account_id, ultimate_owner_seller = ultimate_owner
+) on $left.seller_id == $right.account_id
+| where ultimate_owner_buyer == ultimate_owner_seller          // same beneficial owner
+| summarize
+    wash_count   = count(),
+    wash_volume  = sum(quantity),
+    account_a    = any(buyer_id),
+    account_b    = any(seller_id)
+    by symbol, exchange_id, ultimate_owner = ultimate_owner_buyer,
+       bin(event_time, 10m)
+| where wash_count >= 3                                        // at least 3 wash trades
+| project
+    event_time,
+    exchange_id,
+    symbol,
+    ultimate_owner,
+    wash_count,
+    wash_volume,
+    account_a,
+    account_b
+| order by wash_count desc

@@ -1,0 +1,67 @@
+// =============================================================================
+// Layering Detection — KQL Real-Time Rule
+// =============================================================================
+// Fabric Eventhouse / KQL Database: surveillance
+// Tables: ORDER_BOOK_EVENTS
+// Recommended scheduling: Run every 30 seconds via Data Activator trigger
+//
+// Detection logic (mirrors README Section 5.2 — Pattern Detection Agent):
+//   A broker is flagged for layering when, within a 2-minute rolling window:
+//     • orders placed at ≥5 distinct price levels on one side (sell)
+//     • ≥70% of those orders are subsequently cancelled
+//     • AND the same broker has ADD orders on the opposite side (buy)
+//       indicating their "real" directional intent
+//
+// Output columns:
+//   event_time          — bucket time
+//   broker_id           — flagged broker
+//   symbol              — instrument
+//   exchange_id         — exchange
+//   layering_side       — the "fake" side (usually sell to push price down)
+//   price_levels        — distinct price levels used
+//   orders_placed       — total ADD orders on layering side
+//   orders_cancelled    — CANCEL orders on layering side
+//   cancel_fraction     — fraction cancelled
+//   opposite_side_orders— ADD orders on the opposite (real intent) side
+// =============================================================================
+
+let layering_candidates =
+    ORDER_BOOK_EVENTS
+    | where event_time > ago(2m)
+    | summarize
+        price_levels   = dcount(price),
+        orders_placed  = countif(action == "add"),
+        orders_cancelled = countif(action == "cancel")
+        by broker_id, symbol, exchange_id, side, bin(event_time, 30s)
+    | where price_levels >= 5                                   // multiple price levels
+    | where orders_placed > 0
+    | extend cancel_fraction = round(orders_cancelled * 1.0 / orders_placed, 3)
+    | where cancel_fraction >= 0.70;                            // most orders cancelled
+
+let opposite_side_orders =
+    ORDER_BOOK_EVENTS
+    | where event_time > ago(2m)
+    | where action == "add"
+    | summarize opposite_orders = count()
+        by broker_id, symbol, exchange_id,
+           opposite_side = side,
+           bin(event_time, 30s);
+
+layering_candidates
+| join kind=inner (
+    opposite_side_orders
+) on broker_id, symbol, exchange_id, event_time
+| where side != opposite_side                                   // opposite sides only
+| where opposite_orders >= 1                                    // real intent on other side
+| project
+    event_time,
+    exchange_id,
+    broker_id,
+    symbol,
+    layering_side        = side,
+    price_levels,
+    orders_placed,
+    orders_cancelled,
+    cancel_fraction,
+    opposite_side_orders = opposite_orders
+| order by cancel_fraction desc, price_levels desc

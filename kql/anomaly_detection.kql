@@ -1,0 +1,117 @@
+// =============================================================================
+// Anomaly Detection — KQL Real-Time Rules
+// =============================================================================
+// Fabric Eventhouse / KQL Database: surveillance
+// Table: TRADES
+// Recommended scheduling: Run every 1 minute via Data Activator trigger
+//
+// Two sub-queries are provided:
+//   (A) series_decompose_anomalies — KQL built-in statistical anomaly detection
+//       on 1-minute VWAP time series (24-hour look-back)
+//   (B) Volume spike detection — Z-score based 1-minute volume outlier
+//
+// =============================================================================
+
+
+// ---------------------------------------------------------------------------
+// (A) Price Anomaly using series_decompose_anomalies
+// ---------------------------------------------------------------------------
+// Flags 1-minute VWAP buckets that deviate more than 2.5 standard deviations
+// from the decomposed baseline.  The KQL built-in handles seasonality and
+// trend automatically.
+//
+// Output columns:
+//   event_time    — anomalous minute bucket
+//   symbol        — instrument
+//   exchange_id   — exchange
+//   avg_price     — observed VWAP
+//   anomaly_score — KQL anomaly score (positive = spike, negative = crash)
+// ---------------------------------------------------------------------------
+
+TRADES
+| where event_time > ago(24h)
+| make-series avg_price = avg(price) on event_time
+    from ago(24h) to now() step 1m
+    by symbol, exchange_id
+| extend anomalies = series_decompose_anomalies(avg_price, 2.5)
+| mv-expand event_time, avg_price, anomalies
+| where toreal(anomalies) != 0
+| project
+    event_time  = todatetime(event_time),
+    symbol,
+    exchange_id,
+    avg_price   = toreal(avg_price),
+    anomaly_score = toreal(anomalies)
+| order by abs(anomaly_score) desc
+
+
+// ---------------------------------------------------------------------------
+// (B) Volume Spike Detection (Z-score, 1-hour rolling baseline)
+// ---------------------------------------------------------------------------
+// Computes the 1-minute trade volume for each (symbol, exchange) and flags
+// buckets whose volume exceeds the rolling 60-minute mean by more than
+// 3 standard deviations.
+//
+// Output columns:
+//   event_time      — anomalous minute bucket
+//   symbol          — instrument
+//   exchange_id     — exchange
+//   volume_1m       — observed 1-minute volume
+//   mean_volume_1h  — rolling 60-minute mean volume
+//   z_score         — (volume_1m - mean) / std
+// ---------------------------------------------------------------------------
+
+let volume_series =
+    TRADES
+    | where event_time > ago(1h)
+    | summarize volume_1m = sum(quantity)
+        by symbol, exchange_id, bin(event_time, 1m);
+
+volume_series
+| join kind=inner (
+    volume_series
+    | summarize
+        mean_volume_1h = avg(volume_1m),
+        std_volume_1h  = stdev(volume_1m)
+        by symbol, exchange_id
+) on symbol, exchange_id
+| extend z_score = iff(
+    std_volume_1h > 0,
+    (volume_1m - mean_volume_1h) / std_volume_1h,
+    0.0
+)
+| where z_score >= 3.0                                          // > 3 std-devs above mean
+| project
+    event_time,
+    exchange_id,
+    symbol,
+    volume_1m,
+    mean_volume_1h = round(mean_volume_1h, 0),
+    z_score        = round(z_score, 2)
+| order by z_score desc
+
+
+// ---------------------------------------------------------------------------
+// (C) ML-powered anomaly scoring (FabricIQ ML plugin — requires model deployment)
+// ---------------------------------------------------------------------------
+// Uncomment when the "market-anomaly-detector-v3" model is deployed to the
+// FabricIQ ML Registry.  See README Section 5.2 for model training details.
+//
+// TRADES
+// | where event_time > ago(5m)
+// | summarize
+//     price_return_1m = (last(price) - first(price)) / first(price),
+//     volume_5m       = sum(quantity),
+//     trade_count     = count(),
+//     vwap            = sum(price * quantity) / sum(quantity)
+//     by symbol, exchange_id, bin(event_time, 1m)
+// | evaluate ml_anomaly_score(
+//     model_name = "market-anomaly-detector-v3",
+//     features   = pack(
+//         "price_return_1m", price_return_1m,
+//         "volume_5m",       volume_5m,
+//         "trade_count",     trade_count,
+//         "vwap",            vwap
+//     )
+// )
+// | where anomaly_probability > 0.85
