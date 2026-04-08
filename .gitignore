@@ -40,3 +40,4 @@ output/
 .env
 *.tfstate
 *.tfstate.backup
+infra/*.json

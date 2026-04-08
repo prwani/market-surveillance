@@ -89,9 +89,6 @@ output namespaceName string = eventHubNamespace.name
 @description('Event Hubs namespace ID')
 output namespaceId string = eventHubNamespace.id
 
-@description('Connection string for the Event Hubs namespace')
-output connectionString string = sendListenRule.listKeys().primaryConnectionString
-
 @description('Trades hub name')
 output tradesHubName string = tradesHub.name
 
