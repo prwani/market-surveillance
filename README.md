@@ -77,6 +77,9 @@ Open [http://localhost:8080](http://localhost:8080) to access:
 - **Cases** — review intervention cases and evidence reports
 - **KQL Explorer** — run KQL queries against Fabric Eventhouse (requires `KQL_URI` env var)
 
+See [docs/dashboard-guide.md](docs/dashboard-guide.md) for a complete user guide covering
+every page, alert types, severity levels, case lifecycle, and troubleshooting.
+
 ### Full Fabric Deployment
 
 Deploy the entire infrastructure to Azure with a single command:
