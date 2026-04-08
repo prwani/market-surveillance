@@ -1,5 +1,7 @@
 // Main Bicep template for Market Surveillance System
-// Deploys Event Hubs, Azure Data Explorer, Key Vault, Container Apps, Storage
+// Deploys Fabric Capacity, Key Vault, Container Apps, Storage
+// NOTE: KQL database lives in Fabric Eventhouse (created via Fabric REST API),
+//       not a standalone Azure Data Explorer cluster.
 targetScope = 'resourceGroup'
 
 @description('Azure region for all resources')
@@ -55,32 +57,6 @@ module fabricCapacity 'modules/fabric-capacity.bicep' = {
     tags: tags
     skuName: fabricSku
     adminUpn: fabricAdminUpn
-  }
-}
-
-// ──────────────────────────────────────────────
-// Event Hubs — trade and order book streaming
-// ──────────────────────────────────────────────
-module eventHubs 'modules/event-hubs.bicep' = {
-  name: 'eventHubsDeploy'
-  params: {
-    location: location
-    environmentName: environmentName
-    projectName: projectName
-    tags: tags
-  }
-}
-
-// ──────────────────────────────────────────────
-// Azure Data Explorer — KQL time-series queries
-// ──────────────────────────────────────────────
-module dataExplorer 'modules/data-explorer.bicep' = {
-  name: 'dataExplorerDeploy'
-  params: {
-    location: location
-    environmentName: environmentName
-    projectName: projectName
-    tags: tags
   }
 }
 
@@ -182,15 +158,6 @@ output fabricCapacityId string = fabricCapacity.outputs.capacityId
 
 @description('Fabric capacity SKU')
 output fabricCapacitySku string = fabricCapacity.outputs.capacitySku
-
-@description('Event Hubs namespace name')
-output eventHubNamespace string = eventHubs.outputs.namespaceName
-
-@description('Azure Data Explorer cluster URI')
-output adxClusterUri string = dataExplorer.outputs.clusterUri
-
-@description('Azure Data Explorer database name')
-output adxDatabaseName string = dataExplorer.outputs.databaseName
 
 @description('Key Vault name')
 output keyVaultName string = keyVault.name

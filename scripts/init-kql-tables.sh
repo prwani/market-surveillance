@@ -1,31 +1,23 @@
 #!/usr/bin/env bash
-# Initialize KQL tables in Azure Data Explorer for the surveillance database
+# Initialize KQL tables in Fabric Eventhouse for the surveillance database
 set -euo pipefail
 
-ADX_URI="${1:?Usage: init-kql-tables.sh <adx-cluster-uri> <database-name> <resource-group>}"
-ADX_DB="${2:?Missing database name}"
-RESOURCE_GROUP="${3:?Missing resource group}"
+KQL_URI="${1:?Usage: init-kql-tables.sh <kql-uri> <database-name>}"
+KQL_DB="${2:?Missing database name}"
 
-ADX_CLUSTER_NAME=$(echo "${ADX_URI}" | sed -E 's|https://([^.]+)\..*|\1|')
+echo "Initializing KQL tables in ${KQL_DB} on Fabric Eventhouse..."
 
-echo "Initializing KQL tables in ${ADX_DB} on ${ADX_CLUSTER_NAME}..."
+TOKEN=$(az account get-access-token --resource "https://kusto.kusto.windows.net" --query accessToken -o tsv)
 
 run_kql() {
   local name="$1"
   local query="$2"
   echo "  Creating table: ${name}..."
-  az kusto query run \
-    --cluster-name "${ADX_CLUSTER_NAME}" \
-    --database-name "${ADX_DB}" \
-    --resource-group "${RESOURCE_GROUP}" \
-    --query-content "${query}" \
-    --output none 2>/dev/null || \
-  az rest \
-    --method POST \
-    --url "${ADX_URI}/v1/rest/mgmt" \
-    --headers "Content-Type=application/json" \
-    --body "{\"db\":\"${ADX_DB}\",\"csl\":\"${query}\"}" \
-    --output none
+  curl -s -X POST "${KQL_URI}/v1/rest/mgmt" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "{\"db\":\"${KQL_DB}\",\"csl\":\"${query}\"}" \
+    -o /dev/null -w ""
 }
 
 # ── TRADES table ──────────────────────────────────────────
