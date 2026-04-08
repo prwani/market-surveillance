@@ -18,3 +18,9 @@
 # nixtla>=0.5.0
 # torch>=2.2.0
 # transformers>=4.38.0
+
+# Web dashboard
+fastapi>=0.110.0
+uvicorn>=0.27.0
+azure-identity>=1.15.0
+azure-kusto-data>=4.3.0

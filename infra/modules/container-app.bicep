@@ -61,8 +61,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           identity: 'System'
         }
         {
-          name: 'adx-cluster-uri'
-          keyVaultUrl: 'https://${keyVaultName}${environment().suffixes.keyvaultDns}/secrets/adx-cluster-uri'
+          name: 'kql-cluster-uri'
+          keyVaultUrl: 'https://${keyVaultName}${environment().suffixes.keyvaultDns}/secrets/kql-cluster-uri'
           identity: 'System'
         }
       ]
@@ -86,11 +86,11 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
               secretRef: 'eventhub-connection'
             }
             {
-              name: 'ADX_CLUSTER_URI'
-              secretRef: 'adx-cluster-uri'
+              name: 'KQL_CLUSTER_URI'
+              secretRef: 'kql-cluster-uri'
             }
             {
-              name: 'ADX_DATABASE'
+              name: 'KQL_DATABASE'
               value: 'surveillance'
             }
             {
