@@ -1,6 +1,7 @@
 """FastAPI web dashboard for the market surveillance system."""
 
 import dataclasses
+import logging
 import os
 import sys
 from typing import Any, Dict, List, Optional
@@ -11,7 +12,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 # Allow imports from repo root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from exchange_data_simulator import SimulationEngine  # noqa: E402
+from exchange_data_simulator import SimulationEngine, TradeEvent, OrderBookEvent  # noqa: E402
 from agents import (  # noqa: E402
     PatternDetectionAgent,
     AnomalyDetectionAgent,
@@ -30,16 +31,21 @@ from app.templates import (  # noqa: E402
     kql_html,
 )
 
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # Optional KQL support
 # ---------------------------------------------------------------------------
 KQL_URI = os.environ.get("KQL_URI", "")
+KQL_DB = os.environ.get("KQL_DB", "surveillance")
 _kusto_client = None
+HAS_KUSTO = False
 
 try:
     from azure.identity import DefaultAzureCredential
     from azure.kusto.data import KustoClient, KustoConnectionStringBuilder
 
+    HAS_KUSTO = True
     if KQL_URI:
         kcsb = KustoConnectionStringBuilder.with_azure_token_credential(
             KQL_URI, DefaultAzureCredential()
@@ -122,6 +128,67 @@ async def page_report(case_id: str):
 @app.get("/kql", response_class=HTMLResponse)
 async def page_kql():
     return kql_html()
+
+
+# ---------------------------------------------------------------------------
+# Eventhouse inline ingestion helper
+# ---------------------------------------------------------------------------
+_INGEST_BATCH_SIZE = 50
+
+
+def _ingest_events_to_eventhouse(raw_events) -> int:
+    """Ingest raw simulation events into Fabric Eventhouse via .ingest inline.
+
+    Returns the total number of rows ingested.
+    """
+    trades = [e for e in raw_events if isinstance(e, TradeEvent)]
+    orders = [e for e in raw_events if isinstance(e, OrderBookEvent)]
+
+    def _trade_tsv(ev):
+        d = dataclasses.asdict(ev)
+        return "\t".join([
+            str(d.get("event_id", "")),
+            str(d.get("timestamp", "")),
+            str(d.get("exchange_id", "")),
+            str(d.get("symbol", "")),
+            str(d.get("price", 0)),
+            str(d.get("quantity", 0)),
+            str(d.get("buyer_id", "")),
+            str(d.get("seller_id", "")),
+            str(d.get("order_type", "")),
+            str(d.get("venue", "")),
+        ])
+
+    def _order_tsv(ev):
+        d = dataclasses.asdict(ev)
+        return "\t".join([
+            str(d.get("event_id", "")),
+            str(d.get("timestamp", "")),
+            str(d.get("exchange_id", "")),
+            str(d.get("symbol", "")),
+            str(d.get("side", "")),
+            str(d.get("price", 0)),
+            str(d.get("quantity", 0)),
+            str(d.get("action", "")),
+            str(d.get("broker_id", "")),
+        ])
+
+    total = 0
+    for i in range(0, len(trades), _INGEST_BATCH_SIZE):
+        batch = trades[i : i + _INGEST_BATCH_SIZE]
+        rows = "\n".join(_trade_tsv(t) for t in batch)
+        cmd = f".ingest inline into table TRADES <|\n{rows}"
+        _kusto_client.execute_mgmt(KQL_DB, cmd)
+        total += len(batch)
+
+    for i in range(0, len(orders), _INGEST_BATCH_SIZE):
+        batch = orders[i : i + _INGEST_BATCH_SIZE]
+        rows = "\n".join(_order_tsv(o) for o in batch)
+        cmd = f".ingest inline into table ORDER_BOOK_EVENTS <|\n{rows}"
+        _kusto_client.execute_mgmt(KQL_DB, cmd)
+        total += len(batch)
+
+    return total
 
 
 # ---------------------------------------------------------------------------
@@ -214,11 +281,21 @@ async def api_simulate(request: Request):
         "total_reports": len(reports_map),
     }
 
+    # -- optionally ingest into Fabric Eventhouse ----------------------------
+    eventhouse_rows = 0
+    if KQL_URI and HAS_KUSTO and _kusto_client:
+        try:
+            eventhouse_rows = _ingest_events_to_eventhouse(raw_events)
+            logger.info("Eventhouse ingestion: %d rows", eventhouse_rows)
+        except Exception as e:
+            logger.warning("Eventhouse ingestion failed: %s", e)
+
     return {
         "event_count": len(events),
         "alert_count": len(alert_dicts),
         "case_count": len(case_dicts),
         "report_count": len(reports_map),
+        "eventhouse_rows": eventhouse_rows,
     }
 
 
