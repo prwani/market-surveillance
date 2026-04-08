@@ -97,6 +97,12 @@ This provisions:
 
 See [docs/deployment-guide.md](docs/deployment-guide.md) for detailed instructions.
 
+### Scaling Beyond Demo
+
+For guidance on scaling from the demo (12 symbols) to production (1,000+ symbols),
+including ACA partitioning, AKS StatefulSet architecture, and cost estimates, see
+[docs/scaling-guide.md](docs/scaling-guide.md).
+
 ## Project Structure
 
 ```

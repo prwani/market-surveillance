@@ -15,15 +15,29 @@ Architecture:
 The worker maintains a high-water mark (last processed event_time) to
 avoid reprocessing. On restart, it resumes from the last checkpoint.
 
+Per-exchange partitioning:
+    Each worker instance can be assigned a single exchange (--exchange SGX)
+    so that it only processes events for that exchange. A special
+    'cross-market' partition runs only the CrossMarketAgent across all
+    exchanges.
+
+Warm-up on startup:
+    On cold start, the worker back-fills agent sliding windows by querying
+    the last N minutes of historical data (--warmup-minutes, default 60).
+
 Usage:
-    python worker.py                          # uses env vars
-    python worker.py --poll-interval 5        # poll every 5 seconds
+    python worker.py                                    # all exchanges
+    python worker.py --exchange SGX                     # SGX only
+    python worker.py --exchange cross-market            # cross-market agent only
+    python worker.py --warmup-minutes 30 --exchange HKEX
 
 Environment variables:
-    KQL_URI       — Fabric Eventhouse query URI (required)
-    KQL_DB        — KQL database name (default: surveillance)
-    POLL_INTERVAL — seconds between polls (default: 10)
-    DASHBOARD_URL — URL of the dashboard to push state updates (optional)
+    KQL_URI         — Fabric Eventhouse query URI (required)
+    KQL_DB          — KQL database name (default: surveillance)
+    POLL_INTERVAL   — seconds between polls (default: 10)
+    EXCHANGE_FILTER — exchange partition (e.g. SGX, HKEX, NSE, cross-market)
+    WARMUP_MINUTES  — minutes of history to load on cold start (default: 60)
+    DASHBOARD_URL   — URL of the dashboard to push state updates (optional)
 """
 
 from __future__ import annotations
@@ -36,7 +50,8 @@ import os
 import signal
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # Ensure repo root is on path
@@ -103,11 +118,12 @@ class EventhouseClient:
         """Execute a KQL management command."""
         self.client.execute_mgmt(self.db, cmd)
 
-    def fetch_new_trades(self, since: str, limit: int = 5000) -> List[Dict]:
+    def fetch_new_trades(self, since: str, limit: int = 5000, exchange: str = '') -> List[Dict]:
         """Fetch trade events newer than the given ISO timestamp."""
+        exchange_filter = f"\n        | where exchange_id == '{exchange}'" if exchange else ''
         kql = f"""
         TRADES
-        | where event_time > datetime('{since}')
+        | where event_time > datetime('{since}'){exchange_filter}
         | order by event_time asc
         | take {limit}
         | project trade_id, event_time, exchange_id, symbol, price, quantity,
@@ -115,11 +131,12 @@ class EventhouseClient:
         """
         return self.query(kql)
 
-    def fetch_new_orders(self, since: str, limit: int = 5000) -> List[Dict]:
+    def fetch_new_orders(self, since: str, limit: int = 5000, exchange: str = '') -> List[Dict]:
         """Fetch order book events newer than the given ISO timestamp."""
+        exchange_filter = f"\n        | where exchange_id == '{exchange}'" if exchange else ''
         kql = f"""
         ORDER_BOOK_EVENTS
-        | where event_time > datetime('{since}')
+        | where event_time > datetime('{since}'){exchange_filter}
         | order by event_time asc
         | take {limit}
         | project event_id, event_time, exchange_id, symbol, side, price,
@@ -183,12 +200,19 @@ class AgentPipeline:
             if self.eventhouse:
                 self.eventhouse.write_intervention(case)
 
-    def process_events(self, events: List[Dict[str, Any]]) -> int:
-        """Feed a batch of events through all agents. Returns count processed."""
+    def process_events(self, events: List[Dict[str, Any]], cross_market_only: bool = False) -> int:
+        """Feed a batch of events through agents. Returns count processed.
+
+        When *cross_market_only* is True only the CrossMarketAgent receives
+        events (used by the ``cross-market`` partition worker).
+        """
         for ev in events:
-            self.pattern_agent.process_event(ev)
-            self.anomaly_agent.process_event(ev)
-            self.cross_market_agent.process_event(ev)
+            if cross_market_only:
+                self.cross_market_agent.process_event(ev)
+            else:
+                self.pattern_agent.process_event(ev)
+                self.anomaly_agent.process_event(ev)
+                self.cross_market_agent.process_event(ev)
             self.evidence_agent.process_event(ev)
             self.events_processed += 1
         return len(events)
