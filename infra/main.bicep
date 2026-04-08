@@ -165,10 +165,12 @@ resource kvRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' =
 }
 
 // ──────────────────────────────────────────────
-// Streaming Worker — always-on agent processing
+// Streaming Workers — per-exchange partitioned
 // ──────────────────────────────────────────────
-module workerApp 'modules/worker-app.bicep' = {
-  name: 'workerAppDeploy'
+var exchangeWorkers = ['SGX', 'HKEX', 'NSE', 'cross-market']
+
+module workerApps 'modules/worker-app.bicep' = [for exchange in exchangeWorkers: {
+  name: 'workerDeploy-${exchange}'
   params: {
     location: location
     environmentName: environmentName
@@ -177,8 +179,9 @@ module workerApp 'modules/worker-app.bicep' = {
     containerAppEnvId: containerApp.outputs.environmentId
     acrLoginServer: acr.properties.loginServer
     kqlUri: '' // Set post-deployment once Fabric workspace is created
+    exchangeFilter: exchange
   }
-}
+}]
 
 // ──────────────────────────────────────────────
 // Outputs
@@ -201,8 +204,8 @@ output containerAppEnvironment string = containerApp.outputs.environmentName
 @description('Container App name')
 output containerAppName string = containerApp.outputs.appName
 
-@description('Worker App name')
-output workerAppName string = workerApp.outputs.appName
+@description('Worker App names (per-exchange)')
+output workerAppNames array = [for (exchange, i) in exchangeWorkers: workerApps[i].outputs.appName]
 
 @description('Dashboard URL')
 output dashboardUrl string = 'https://${containerApp.outputs.appFqdn}'

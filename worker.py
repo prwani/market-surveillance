@@ -275,10 +275,16 @@ def normalize_order(row: Dict) -> Dict:
 # Main worker loop
 # ---------------------------------------------------------------------------
 
+HEALTHCHECK_PATH = Path("/tmp/worker-healthy")
+
+
 class StreamingWorker:
     """
     Continuously polls the Fabric Eventhouse for new events and processes
     them through the agent pipeline.
+
+    Supports per-exchange partitioning (``--exchange``) and historical
+    warm-up on cold start (``--warmup-minutes``).
     """
 
     def __init__(
@@ -286,11 +292,20 @@ class StreamingWorker:
         kql_uri: str,
         kql_db: str = "surveillance",
         poll_interval: int = 10,
+        exchange: str = "",
+        warmup_minutes: int = 60,
     ):
         self.kql_uri = kql_uri
         self.kql_db = kql_db
         self.poll_interval = poll_interval
+        self.exchange = exchange
+        self.warmup_minutes = warmup_minutes
         self._running = False
+
+        # cross-market mode: fetch all exchanges but only run CrossMarketAgent
+        self.cross_market_only = exchange == "cross-market"
+        # For cross-market we need data from every exchange (no filter)
+        self._exchange_filter = "" if self.cross_market_only else exchange
 
         # High-water marks for incremental polling
         self._trade_hwm = datetime.now(timezone.utc).isoformat()
@@ -300,16 +315,65 @@ class StreamingWorker:
         self.eventhouse = EventhouseClient(kql_uri, kql_db)
         self.pipeline = AgentPipeline(eventhouse=self.eventhouse)
 
+        label = exchange if exchange else "all"
         logger.info(
-            "Worker initialized: KQL=%s DB=%s poll=%ds",
-            kql_uri, kql_db, poll_interval,
+            "Worker initialized: KQL=%s DB=%s poll=%ds exchange=%s warmup=%dm",
+            kql_uri, kql_db, poll_interval, label, warmup_minutes,
         )
+
+    # ── Warm-up ───────────────────────────────────────────
+
+    def _warmup(self) -> None:
+        """Back-fill agent sliding windows with recent historical data."""
+        if self.warmup_minutes <= 0:
+            return
+
+        logger.info("Warming up agents with last %d minutes of history...", self.warmup_minutes)
+        warmup_since = (datetime.now(timezone.utc) - timedelta(minutes=self.warmup_minutes)).isoformat()
+
+        trades_raw = self.eventhouse.fetch_new_trades(warmup_since, limit=50000, exchange=self._exchange_filter)
+        orders_raw = self.eventhouse.fetch_new_orders(warmup_since, limit=50000, exchange=self._exchange_filter)
+
+        trades = [normalize_trade(r) for r in trades_raw]
+        orders = [normalize_order(r) for r in orders_raw]
+
+        all_events = trades + orders
+        all_events.sort(key=lambda e: e.get("timestamp", ""))
+
+        if all_events:
+            self.pipeline.process_events(all_events, cross_market_only=self.cross_market_only)
+
+        # Set HWMs so the polling loop only fetches truly new events
+        if trades_raw:
+            self._trade_hwm = str(trades_raw[-1].get("event_time", self._trade_hwm))
+        if orders_raw:
+            self._order_hwm = str(orders_raw[-1].get("event_time", self._order_hwm))
+
+        logger.info("Warm-up complete: processed %d events", len(all_events))
+
+    # ── Healthcheck ───────────────────────────────────────
+
+    @staticmethod
+    def _touch_healthcheck() -> None:
+        """Write healthcheck sentinel so liveness probes can verify the worker."""
+        try:
+            HEALTHCHECK_PATH.touch()
+        except OSError:
+            pass
+
+    # ── Main loop ─────────────────────────────────────────
 
     def run(self) -> None:
         """Start the continuous polling loop."""
         self._running = True
         signal.signal(signal.SIGTERM, self._handle_shutdown)
         signal.signal(signal.SIGINT, self._handle_shutdown)
+
+        # Warm up agent windows before entering the live loop
+        try:
+            self._warmup()
+        except Exception:
+            logger.exception("Warm-up failed — starting with empty state")
 
         logger.info("Worker started — polling every %ds", self.poll_interval)
         cycle = 0
@@ -318,7 +382,8 @@ class StreamingWorker:
             cycle += 1
             try:
                 n = self._poll_and_process()
-                if n > 0 or cycle % 30 == 0:  # log every 30 cycles even if idle
+                self._touch_healthcheck()
+                if n > 0 or cycle % 30 == 0:
                     stats = self.pipeline.stats()
                     logger.info(
                         "Cycle %d: processed %d events | total: %d events, %d alerts, %d cases",
@@ -339,13 +404,13 @@ class StreamingWorker:
     def _poll_and_process(self) -> int:
         """Poll for new events and feed through agents. Returns event count."""
         # Fetch new trades
-        trades_raw = self.eventhouse.fetch_new_trades(self._trade_hwm)
+        trades_raw = self.eventhouse.fetch_new_trades(self._trade_hwm, exchange=self._exchange_filter)
         trades = [normalize_trade(r) for r in trades_raw]
         if trades_raw:
             self._trade_hwm = str(trades_raw[-1].get("event_time", self._trade_hwm))
 
         # Fetch new orders
-        orders_raw = self.eventhouse.fetch_new_orders(self._order_hwm)
+        orders_raw = self.eventhouse.fetch_new_orders(self._order_hwm, exchange=self._exchange_filter)
         orders = [normalize_order(r) for r in orders_raw]
         if orders_raw:
             self._order_hwm = str(orders_raw[-1].get("event_time", self._order_hwm))
@@ -355,7 +420,7 @@ class StreamingWorker:
         all_events.sort(key=lambda e: e.get("timestamp", ""))
 
         if all_events:
-            self.pipeline.process_events(all_events)
+            self.pipeline.process_events(all_events, cross_market_only=self.cross_market_only)
 
         return len(all_events)
 
@@ -377,6 +442,12 @@ def parse_args():
     parser.add_argument("--poll-interval", type=int,
                         default=int(os.environ.get("POLL_INTERVAL", "10")),
                         help="Seconds between polls (default: 10)")
+    parser.add_argument("--exchange",
+                        default=os.environ.get("EXCHANGE_FILTER", ""),
+                        help="Exchange partition filter (e.g. SGX, HKEX, NSE, cross-market)")
+    parser.add_argument("--warmup-minutes", type=int,
+                        default=int(os.environ.get("WARMUP_MINUTES", "60")),
+                        help="Minutes of history to back-fill on cold start (default: 60)")
     return parser.parse_args()
 
 
@@ -391,6 +462,8 @@ def main():
         kql_uri=args.kql_uri,
         kql_db=args.kql_db,
         poll_interval=args.poll_interval,
+        exchange=args.exchange,
+        warmup_minutes=args.warmup_minutes,
     )
     worker.run()
 

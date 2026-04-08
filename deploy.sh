@@ -46,10 +46,20 @@ KV_NAME=$(echo "${DEPLOY_OUTPUT}" | jq -r '.properties.outputs.keyVaultName.valu
 STORAGE_NAME=$(echo "${DEPLOY_OUTPUT}" | jq -r '.properties.outputs.storageAccountName.value')
 CA_ENV=$(echo "${DEPLOY_OUTPUT}" | jq -r '.properties.outputs.containerAppEnvironment.value')
 CA_NAME=$(echo "${DEPLOY_OUTPUT}" | jq -r '.properties.outputs.containerAppName.value')
-WORKER_NAME=$(echo "${DEPLOY_OUTPUT}" | jq -r '.properties.outputs.workerAppName.value')
 ACR_LOGIN=$(echo "${DEPLOY_OUTPUT}" | jq -r '.properties.outputs.acrLoginServer.value')
 DASHBOARD_URL=$(echo "${DEPLOY_OUTPUT}" | jq -r '.properties.outputs.dashboardUrl.value')
 ACR_NAME="${ACR_LOGIN%%.*}"
+
+# Worker names are per-exchange (shortened to fit ACA 32-char limit)
+EXCHANGE_WORKERS=("SGX" "HKEX" "NSE" "cross-market")
+WORKER_NAMES=()
+for EX in "${EXCHANGE_WORKERS[@]}"; do
+  if [[ "${EX}" == "cross-market" ]]; then
+    WORKER_NAMES+=("${PROJECT}-wk-crossmkt-${ENV}")
+  else
+    WORKER_NAMES+=("${PROJECT}-wk-${EX,,}-${ENV}")
+  fi
+done
 
 # ── Build and push Docker images ──────────────────────────
 echo "[4/9] Building and pushing Docker images..."
@@ -107,8 +117,8 @@ else
   echo "  ⚠ Skipping table init — run scripts/init-kql-tables.sh manually"
 fi
 
-# ── Configure dashboard and worker with KQL endpoint ──────
-echo "[8/9] Configuring dashboard and worker..."
+# ── Configure dashboard and workers with KQL endpoint ─────
+echo "[8/9] Configuring dashboard and workers..."
 if [[ -n "${KQL_URI}" ]]; then
   az containerapp update \
     --name "${CA_NAME}" \
@@ -116,17 +126,22 @@ if [[ -n "${KQL_URI}" ]]; then
     --set-env-vars "KQL_URI=${KQL_URI}" "KQL_DB=surveillance" \
     --output none 2>/dev/null || true
 
-  az containerapp update \
-    --name "${WORKER_NAME}" \
-    --resource-group "${RESOURCE_GROUP}" \
-    --set-env-vars "KQL_URI=${KQL_URI}" "KQL_DB=surveillance" "POLL_INTERVAL=10" \
-    --output none 2>/dev/null || true
+  for i in "${!EXCHANGE_WORKERS[@]}"; do
+    WN="${WORKER_NAMES[$i]}"
+    EX="${EXCHANGE_WORKERS[$i]}"
+    az containerapp update \
+      --name "${WN}" \
+      --resource-group "${RESOURCE_GROUP}" \
+      --set-env-vars "KQL_URI=${KQL_URI}" "KQL_DB=surveillance" "POLL_INTERVAL=10" "EXCHANGE_FILTER=${EX}" "WARMUP_MINUTES=60" \
+      --output none 2>/dev/null || true
+  done
 fi
 
-# Grant both app identities KQL database access
+# Grant dashboard and all worker identities KQL database access
 echo "[9/9] Granting KQL database permissions..."
 KUSTO_TOKEN=$(az account get-access-token --resource "https://kusto.kusto.windows.net" --query accessToken -o tsv)
-for APP_NAME in "${CA_NAME}" "${WORKER_NAME}"; do
+ALL_APPS=("${CA_NAME}" "${WORKER_NAMES[@]}")
+for APP_NAME in "${ALL_APPS[@]}"; do
   PRINCIPAL=$(az containerapp show --name "${APP_NAME}" --resource-group "${RESOURCE_GROUP}" --query "identity.principalId" -o tsv 2>/dev/null)
   if [[ -n "${PRINCIPAL}" ]]; then
     APP_ID=$(az ad sp show --id "${PRINCIPAL}" --query "appId" -o tsv 2>/dev/null)
@@ -156,6 +171,11 @@ echo " Eventhouse KQL URI: ${KQL_URI}"
 echo " Container Registry: ${ACR_LOGIN}"
 echo " Key Vault         : ${KV_NAME}"
 echo " Storage Account   : ${STORAGE_NAME}"
+echo ""
+echo " Workers (per-exchange):"
+for WN in "${WORKER_NAMES[@]}"; do
+  echo "   • ${WN}"
+done
 echo ""
 echo " ╔═══════════════════════════════════════════════════╗"
 echo " ║  Dashboard: ${DASHBOARD_URL}"

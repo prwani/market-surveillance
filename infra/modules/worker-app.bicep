@@ -1,4 +1,6 @@
 // Streaming agent worker — continuously processes events from Fabric Eventhouse
+// Can be deployed multiple times with different exchangeFilter values for
+// per-exchange partitioning.
 @description('Azure region for deployment')
 param location string
 
@@ -26,7 +28,14 @@ param kqlDb string = 'surveillance'
 @description('Poll interval in seconds')
 param pollInterval string = '10'
 
-var appName = '${projectName}-worker-${environmentName}'
+@description('Exchange partition filter (SGX, HKEX, NSE, cross-market, or empty for all)')
+param exchangeFilter string = ''
+
+@description('Minutes of history to back-fill on cold start')
+param warmupMinutes string = '60'
+
+var suffix = exchangeFilter == 'cross-market' ? 'crossmkt' : exchangeFilter != '' ? toLower(exchangeFilter) : 'all'
+var appName = '${projectName}-wk-${suffix}-${environmentName}'
 
 resource workerApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: appName
@@ -61,6 +70,14 @@ resource workerApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'POLL_INTERVAL'
               value: pollInterval
+            }
+            {
+              name: 'EXCHANGE_FILTER'
+              value: exchangeFilter
+            }
+            {
+              name: 'WARMUP_MINUTES'
+              value: warmupMinutes
             }
             {
               name: 'ENVIRONMENT'
