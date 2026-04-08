@@ -165,6 +165,22 @@ resource kvRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' =
 }
 
 // ──────────────────────────────────────────────
+// Streaming Worker — always-on agent processing
+// ──────────────────────────────────────────────
+module workerApp 'modules/worker-app.bicep' = {
+  name: 'workerAppDeploy'
+  params: {
+    location: location
+    environmentName: environmentName
+    projectName: projectName
+    tags: tags
+    containerAppEnvId: containerApp.outputs.environmentId
+    acrLoginServer: acr.properties.loginServer
+    kqlUri: '' // Set post-deployment once Fabric workspace is created
+  }
+}
+
+// ──────────────────────────────────────────────
 // Outputs
 // ──────────────────────────────────────────────
 @description('Fabric capacity name')
@@ -184,6 +200,9 @@ output containerAppEnvironment string = containerApp.outputs.environmentName
 
 @description('Container App name')
 output containerAppName string = containerApp.outputs.appName
+
+@description('Worker App name')
+output workerAppName string = workerApp.outputs.appName
 
 @description('Dashboard URL')
 output dashboardUrl string = 'https://${containerApp.outputs.appFqdn}'

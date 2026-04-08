@@ -334,7 +334,7 @@ async def api_kql(request: Request):
             status_code=501,
         )
     try:
-        response = _kusto_client.execute_query("NetDefaultDB", query)
+        response = _kusto_client.execute_query(KQL_DB, query)
         columns = [col.column_name for col in response.primary_results[0].columns]
         results = []
         for row in response.primary_results[0]:
