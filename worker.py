@@ -5,15 +5,27 @@ Streaming Agent Worker
 Continuously polls the Fabric Eventhouse for new trading events and feeds
 them through all 5 surveillance agents in real-time.
 
-Architecture:
-    Eventhouse (TRADES + ORDER_BOOK_EVENTS)
-        → Worker polls every POLL_INTERVAL seconds
-        → Events fed to: PatternDetection, AnomalyDetection, CrossMarket
-        → Alerts routed to: Intervention → Evidence
-        → Results written back to: INTERVENTIONS table + shared state
+Architecture (Hybrid — Phase 2):
+    Cold start:  Eventhouse (TRADES + ORDER_BOOK_EVENTS)
+                     → Worker polls every POLL_INTERVAL seconds for warm-up
+                     → Agents seeded with last WARMUP_MINUTES of history
+    Live:        Eventstream (Event Hub-compatible endpoint)
+                     → EventHubConsumerClient pushes events in ~1s
+                     → Agents process events in real-time
 
-The worker maintains a high-water mark (last processed event_time) to
-avoid reprocessing. On restart, it resumes from the last checkpoint.
+The worker supports two operating modes:
+
+    **Eventhouse-poll mode** (default / fallback):
+        Polls KQL every POLL_INTERVAL seconds.  Suitable for development or
+        when no Eventstream endpoint is configured.
+
+    **Eventstream-direct mode** (Phase 2, low-latency):
+        Set ``EVENTSTREAM_ENDPOINT`` (Event Hub-compatible connection string)
+        to enable direct Eventstream consumption via
+        ``azure.eventhub.EventHubConsumerClient``.
+        Each exchange partition subscribes using its exchange name as the
+        consumer group.  Cold start still uses Eventhouse for the 60-minute
+        history back-fill.
 
 Per-exchange partitioning:
     Each worker instance can be assigned a single exchange (--exchange SGX)
@@ -32,12 +44,20 @@ Usage:
     python worker.py --warmup-minutes 30 --exchange HKEX
 
 Environment variables:
-    KQL_URI         — Fabric Eventhouse query URI (required)
-    KQL_DB          — KQL database name (default: surveillance)
-    POLL_INTERVAL   — seconds between polls (default: 10)
-    EXCHANGE_FILTER — exchange partition (e.g. SGX, HKEX, NSE, cross-market)
-    WARMUP_MINUTES  — minutes of history to load on cold start (default: 60)
-    DASHBOARD_URL   — URL of the dashboard to push state updates (optional)
+    KQL_URI               — Fabric Eventhouse query URI (required)
+    KQL_DB                — KQL database name (default: surveillance)
+    POLL_INTERVAL         — seconds between polls (default: 10)
+    EXCHANGE_FILTER       — exchange partition (e.g. SGX, HKEX, NSE, cross-market)
+    WARMUP_MINUTES        — minutes of history to load on cold start (default: 60)
+    DASHBOARD_URL         — URL of the dashboard to push state updates (optional)
+    EVENTSTREAM_ENDPOINT  — Event Hub-compatible connection string for Eventstream
+                            direct consumption (Phase 2).  When set, live events
+                            are consumed from the Eventstream (~1s latency) and
+                            Eventhouse polling is used only for warm-up.
+    EVENTSTREAM_EVENTHUB  — Event Hub name within the Eventstream namespace
+                            (default: surveillance-stream)
+    CONSUMER_GROUP        — Consumer group for Eventstream (default: exchange name
+                            or "$Default" for the all-exchanges worker)
 """
 
 from __future__ import annotations
@@ -76,7 +96,8 @@ logging.basicConfig(
 logger = logging.getLogger("worker")
 
 # Suppress noisy Azure SDK logs
-for _sdk_logger in ("azure.identity", "azure.core", "azure.kusto", "msal"):
+for _sdk_logger in ("azure.identity", "azure.core", "azure.kusto", "msal",
+                    "azure.eventhub", "uamqp"):
     logging.getLogger(_sdk_logger).setLevel(logging.WARNING)
 
 # ---------------------------------------------------------------------------
@@ -163,6 +184,133 @@ class EventhouseClient:
             self.mgmt(f".ingest inline into table INTERVENTIONS <| {row}")
         except Exception as e:
             logger.warning("Failed to write intervention %s: %s", case.case_id, e)
+
+
+
+# ---------------------------------------------------------------------------
+# Eventstream direct consumption (Phase 2)
+# ---------------------------------------------------------------------------
+
+try:
+    from azure.eventhub import EventHubConsumerClient  # type: ignore
+    HAS_EVENTHUB = True
+except ImportError:
+    HAS_EVENTHUB = False
+    logger.warning(
+        "azure-eventhub not installed — Eventstream direct mode unavailable. "
+        "pip install azure-eventhub"
+    )
+
+
+class EventstreamConsumer:
+    """
+    Direct Eventstream consumer using the Event Hub-compatible endpoint.
+
+    Consumes trade and order-book events from the Fabric Eventstream at
+    approximately 1-second latency, replacing the 10-second Eventhouse
+    polling loop for the live phase.
+
+    Each partitioned worker subscribes with its exchange name as the
+    consumer group so that per-exchange workers receive only their subset
+    of events.
+
+    Parameters
+    ----------
+    connection_string : str
+        Event Hub-compatible connection string from the Fabric Eventstream
+        custom app endpoint.  Set via ``EVENTSTREAM_ENDPOINT`` env var.
+    eventhub_name : str
+        Event Hub name within the Eventstream namespace.
+        Set via ``EVENTSTREAM_EVENTHUB`` env var (default: ``surveillance-stream``).
+    consumer_group : str
+        Consumer group name.  Defaults to the exchange name or ``"$Default"``
+        for the all-exchanges worker.
+    pipeline : AgentPipeline
+        The agent pipeline to push received events into.
+    cross_market_only : bool
+        When True only the CrossMarketAgent processes incoming events.
+    """
+
+    def __init__(
+        self,
+        connection_string: str,
+        eventhub_name: str,
+        consumer_group: str,
+        pipeline: "AgentPipeline",
+        cross_market_only: bool = False,
+    ) -> None:
+        if not HAS_EVENTHUB:
+            raise RuntimeError(
+                "azure-eventhub is required for Eventstream mode. "
+                "pip install azure-eventhub"
+            )
+        self.connection_string = connection_string
+        self.eventhub_name = eventhub_name
+        self.consumer_group = consumer_group
+        self.pipeline = pipeline
+        self.cross_market_only = cross_market_only
+        self._running = False
+
+        self._client = EventHubConsumerClient.from_connection_string(
+            connection_string,
+            consumer_group=consumer_group,
+            eventhub_name=eventhub_name,
+        )
+        logger.info(
+            "EventstreamConsumer: connected to %s / consumer_group=%s",
+            eventhub_name, consumer_group,
+        )
+
+    def start(self) -> None:
+        """Start consuming events from Eventstream (blocking call)."""
+        self._running = True
+        logger.info("EventstreamConsumer: starting receive loop...")
+        self._client.receive(
+            on_event=self._on_event,
+            starting_position="-1",  # latest events only (warm-up handled separately)
+        )
+
+    def stop(self) -> None:
+        """Gracefully stop the consumer."""
+        self._running = False
+        try:
+            self._client.close()
+        except Exception:
+            pass
+
+    def _on_event(self, partition_context, event) -> None:
+        """Callback invoked for each incoming Eventstream message."""
+        try:
+            body = event.body_as_str(encoding="UTF-8")
+            data = json.loads(body)
+            # Normalise the raw Eventstream payload into agent event format
+            normalised = self._normalise_event(data)
+            if normalised:
+                self.pipeline.process_events([normalised],
+                                             cross_market_only=self.cross_market_only)
+        except Exception as exc:
+            logger.warning("EventstreamConsumer: failed to process event — %s", exc)
+        finally:
+            partition_context.update_checkpoint(event)
+
+    @staticmethod
+    def _normalise_event(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Convert a raw Eventstream JSON payload to the agent event format.
+
+        The Eventstream schema matches the ``exchange_data_simulator.py``
+        output, so the same normalization as Eventhouse rows is applied.
+        The ``event_type`` field distinguishes TRADE from ORDER_BOOK events.
+        """
+        event_type = data.get("event_type", "")
+        if event_type == "TRADE":
+            return normalize_trade(data) if "trade_id" in data else data
+        elif event_type == "ORDER_BOOK":
+            return normalize_order(data) if "event_id" in data else data
+        # Already normalised (simulator output)
+        elif event_type in ("TRADE", "ORDER_BOOK"):
+            return data
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -280,11 +428,21 @@ HEALTHCHECK_PATH = Path("/tmp/worker-healthy")
 
 class StreamingWorker:
     """
-    Continuously polls the Fabric Eventhouse for new events and processes
-    them through the agent pipeline.
+    Hybrid streaming worker: Eventhouse warm-up + optional Eventstream live push.
 
-    Supports per-exchange partitioning (``--exchange``) and historical
-    warm-up on cold start (``--warmup-minutes``).
+    On cold start the worker back-fills agent sliding windows by querying
+    the last ``warmup_minutes`` of historical data from Eventhouse (KQL).
+
+    After warm-up the worker switches to the most available live mode:
+
+    1. **Eventstream-direct** (Phase 2, ~1s latency) — when
+       ``EVENTSTREAM_ENDPOINT`` is configured, an ``EventstreamConsumer``
+       subscribes to the Eventstream Event Hub-compatible endpoint.
+    2. **Eventhouse-poll** (fallback, default 10s latency) — the traditional
+       KQL polling loop for environments without an Eventstream endpoint.
+
+    Supports per-exchange partitioning (``--exchange``) and the special
+    ``cross-market`` partition that runs only the CrossMarketAgent.
     """
 
     def __init__(
@@ -294,12 +452,19 @@ class StreamingWorker:
         poll_interval: int = 10,
         exchange: str = "",
         warmup_minutes: int = 60,
+        eventstream_endpoint: str = "",
+        eventstream_eventhub: str = "surveillance-stream",
+        consumer_group: str = "",
     ):
         self.kql_uri = kql_uri
         self.kql_db = kql_db
         self.poll_interval = poll_interval
         self.exchange = exchange
         self.warmup_minutes = warmup_minutes
+        self.eventstream_endpoint = eventstream_endpoint
+        self.eventstream_eventhub = eventstream_eventhub
+        # Default consumer group = exchange name or "$Default"
+        self.consumer_group = consumer_group or (exchange if exchange and exchange != "cross-market" else "$Default")
         self._running = False
 
         # cross-market mode: fetch all exchanges but only run CrossMarketAgent
@@ -314,11 +479,13 @@ class StreamingWorker:
         # Initialize
         self.eventhouse = EventhouseClient(kql_uri, kql_db)
         self.pipeline = AgentPipeline(eventhouse=self.eventhouse)
+        self._eventstream_consumer: Optional[EventstreamConsumer] = None
 
         label = exchange if exchange else "all"
         logger.info(
-            "Worker initialized: KQL=%s DB=%s poll=%ds exchange=%s warmup=%dm",
+            "Worker initialized: KQL=%s DB=%s poll=%ds exchange=%s warmup=%dm eventstream=%s",
             kql_uri, kql_db, poll_interval, label, warmup_minutes,
+            "yes" if eventstream_endpoint else "no",
         )
 
     # ── Warm-up ───────────────────────────────────────────
@@ -364,7 +531,13 @@ class StreamingWorker:
     # ── Main loop ─────────────────────────────────────────
 
     def run(self) -> None:
-        """Start the continuous polling loop."""
+        """
+        Start the worker.
+
+        After Eventhouse warm-up, the worker enters the best available live mode:
+        - Eventstream-direct (when ``EVENTSTREAM_ENDPOINT`` is configured)
+        - Eventhouse-poll fallback
+        """
         self._running = True
         signal.signal(signal.SIGTERM, self._handle_shutdown)
         signal.signal(signal.SIGINT, self._handle_shutdown)
@@ -375,6 +548,40 @@ class StreamingWorker:
         except Exception:
             logger.exception("Warm-up failed — starting with empty state")
 
+        if self.eventstream_endpoint and HAS_EVENTHUB:
+            self._run_eventstream()
+        else:
+            if self.eventstream_endpoint and not HAS_EVENTHUB:
+                logger.warning(
+                    "EVENTSTREAM_ENDPOINT set but azure-eventhub not installed — "
+                    "falling back to Eventhouse polling."
+                )
+            self._run_poll_loop()
+
+    def _run_eventstream(self) -> None:
+        """Live mode: consume events directly from Eventstream (~1s latency)."""
+        logger.info(
+            "Worker started — Eventstream-direct mode | consumer_group=%s",
+            self.consumer_group,
+        )
+        self._eventstream_consumer = EventstreamConsumer(
+            connection_string=self.eventstream_endpoint,
+            eventhub_name=self.eventstream_eventhub,
+            consumer_group=self.consumer_group,
+            pipeline=self.pipeline,
+            cross_market_only=self.cross_market_only,
+        )
+        try:
+            self._eventstream_consumer.start()  # blocking
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self._eventstream_consumer.stop()
+            self.pipeline.flush()
+            logger.info("Worker stopped. Final stats: %s", self.pipeline.stats())
+
+    def _run_poll_loop(self) -> None:
+        """Live mode: poll Eventhouse every POLL_INTERVAL seconds (fallback)."""
         logger.info("Worker started — polling every %ds", self.poll_interval)
         cycle = 0
 
@@ -448,6 +655,18 @@ def parse_args():
     parser.add_argument("--warmup-minutes", type=int,
                         default=int(os.environ.get("WARMUP_MINUTES", "60")),
                         help="Minutes of history to back-fill on cold start (default: 60)")
+    parser.add_argument("--eventstream-endpoint",
+                        default=os.environ.get("EVENTSTREAM_ENDPOINT", ""),
+                        help="Event Hub-compatible connection string for Eventstream "
+                             "direct consumption (Phase 2, ~1s latency)")
+    parser.add_argument("--eventstream-eventhub",
+                        default=os.environ.get("EVENTSTREAM_EVENTHUB", "surveillance-stream"),
+                        help="Event Hub name within the Eventstream namespace "
+                             "(default: surveillance-stream)")
+    parser.add_argument("--consumer-group",
+                        default=os.environ.get("CONSUMER_GROUP", ""),
+                        help="Consumer group for Eventstream "
+                             "(default: exchange name or '$Default')")
     return parser.parse_args()
 
 
@@ -464,6 +683,9 @@ def main():
         poll_interval=args.poll_interval,
         exchange=args.exchange,
         warmup_minutes=args.warmup_minutes,
+        eventstream_endpoint=args.eventstream_endpoint,
+        eventstream_eventhub=args.eventstream_eventhub,
+        consumer_group=args.consumer_group,
     )
     worker.run()
 

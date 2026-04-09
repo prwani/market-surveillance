@@ -35,6 +35,7 @@ from typing import Any, Dict, List, Optional
 
 from .base_agent import Alert, BaseAgent, _utcnow_iso
 from .intervention_agent import InterventionCase, REGULATOR_MAP
+from .ontology_graph import BeneficialOwnershipGraph
 
 
 logger = logging.getLogger(__name__)
@@ -139,12 +140,16 @@ class EvidenceCollectionAgent(BaseAgent):
         How many seconds before and after detection to include in evidence.
     openai_client : callable, optional
         A callable ``(prompt: str) -> str`` that calls the GenAI API.
-        If ``None`` and ``OPENAI_API_KEY`` is set, the agent will attempt to
-        import ``openai`` and call ``gpt-4o``.  Otherwise a template-based
-        narrative is generated locally.
+        If ``None`` and ``AZURE_OPENAI_ENDPOINT`` / ``OPENAI_API_KEY`` is set,
+        the agent will attempt to call GPT-4o automatically.  Otherwise a
+        template-based narrative is generated locally.
     language : str
         Language for the GenAI narrative (English | Simplified Chinese |
         Traditional Chinese | Hindi | Tamil).
+    ontology_graph : BeneficialOwnershipGraph, optional
+        When provided, regulatory body lookups and jurisdiction-specific
+        information are resolved via the ontology graph instead of the
+        hard-coded ``REGULATOR_MAP`` dictionary.
     """
 
     name = "EvidenceCollectionAgent"
@@ -154,11 +159,13 @@ class EvidenceCollectionAgent(BaseAgent):
         evidence_window_seconds: int = DEFAULT_EVIDENCE_WINDOW_SECONDS,
         openai_client: Optional[Any] = None,
         language: str = "English",
+        ontology_graph: Optional[BeneficialOwnershipGraph] = None,
     ) -> None:
         super().__init__()
         self._window = evidence_window_seconds
         self._openai_client = openai_client
         self._language = language
+        self._ontology_graph = ontology_graph
         # Buffer of all processed events (keyed by (exchange, symbol))
         self._event_buffer: List[Dict[str, Any]] = []
 
@@ -238,7 +245,7 @@ class EvidenceCollectionAgent(BaseAgent):
         elif alert.alert_type in ("PRICE_ANOMALY", "VOLUME_SPIKE"):
             anomaly_score = alert.confidence_score
 
-        regulatory_body = REGULATOR_MAP.get(alert.exchange_id, "UNKNOWN")
+        regulatory_body = self._resolve_regulatory_body(alert.exchange_id, alert.alert_type)
 
         report = CaseReport(
             report_id=f"RPT-{uuid.uuid4().hex[:10].upper()}",
@@ -270,6 +277,39 @@ class EvidenceCollectionAgent(BaseAgent):
         )
         return report
 
+    # ------------------------------------------------------------------
+    # Regulatory body resolution
+    # ------------------------------------------------------------------
+
+    def _resolve_regulatory_body(
+        self, exchange_id: str, manipulation_type: str
+    ) -> str:
+        """
+        Return the primary regulatory body for the given exchange and
+        manipulation type.
+
+        When an ``ontology_graph`` is available, queries the graph for
+        ``applies_to`` relationships and returns the regulatory body from the
+        most specific matching regulation.  Falls back to the static
+        ``REGULATOR_MAP`` dictionary when the graph is absent or has no data.
+        """
+        if self._ontology_graph is not None:
+            regs = self._ontology_graph.get_applicable_regulations(
+                exchange_id, manipulation_type
+            )
+            if not regs:
+                # Try without manipulation_type filter (return any regulation)
+                regs = self._ontology_graph.get_applicable_regulations(exchange_id)
+            if regs:
+                # Prefer the first regulation that has a regulatory_body attribute
+                for reg in regs:
+                    body = reg.get("regulatory_body", "")
+                    if body:
+                        return body
+
+        # Fallback to static map
+        return REGULATOR_MAP.get(exchange_id, "UNKNOWN")
+
     def generate_narrative(self, report: CaseReport) -> str:
         """
         Generate a plain-text (or GenAI-powered) narrative for the case.
@@ -281,8 +321,8 @@ class EvidenceCollectionAgent(BaseAgent):
         if self._openai_client is not None:
             return self._genai_narrative(report)
 
-        # Check environment for OpenAI key
-        if os.environ.get("OPENAI_API_KEY"):
+        # Check environment for Azure OpenAI or standard OpenAI key
+        if os.environ.get("AZURE_OPENAI_ENDPOINT") or os.environ.get("OPENAI_API_KEY"):
             try:
                 return self._openai_narrative(report)
             except Exception as exc:
@@ -348,15 +388,43 @@ class EvidenceCollectionAgent(BaseAgent):
         return self._openai_client(prompt)
 
     def _openai_narrative(self, report: CaseReport) -> str:
-        """Call OpenAI API directly using the ``openai`` package."""
+        """
+        Call GPT-4o to generate a narrative.
+
+        Supports two modes:
+        1. **Azure OpenAI** (FabricIQ Azure AI integration) — when the
+           ``AZURE_OPENAI_ENDPOINT`` environment variable is set, uses
+           ``openai.AzureOpenAI`` with the deployment name from
+           ``AZURE_OPENAI_DEPLOYMENT`` (default: ``gpt-4o``).
+        2. **Standard OpenAI** — when only ``OPENAI_API_KEY`` is set.
+        """
         import openai  # type: ignore  # optional dependency
         prompt = self._build_prompt(report)
-        client = openai.OpenAI()
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-        )
+
+        azure_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "")
+        if azure_endpoint:
+            deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
+            api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-01")
+            client = openai.AzureOpenAI(
+                azure_endpoint=azure_endpoint,
+                api_version=api_version,
+            )
+            logger.info(
+                "[%s] Using Azure OpenAI endpoint %s deployment %s",
+                self.name, azure_endpoint, deployment,
+            )
+            response = client.chat.completions.create(
+                model=deployment,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+            )
+        else:
+            client = openai.OpenAI()
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+            )
         return response.choices[0].message.content or ""
 
     def _build_prompt(self, report: CaseReport) -> str:

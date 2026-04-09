@@ -1,0 +1,178 @@
+{
+  "$schema": "https://schema.fabriciq.microsoft.com/data-activator/reflex/v1",
+  "name": "MarketSurveillanceReflex",
+  "description": "Data Activator Reflex triggers for real-time market manipulation detection. Replaces ACA polling (10s latency) with sub-second KQL-driven triggers for each manipulation rule.",
+  "workspace": "market-surveillance",
+  "eventhouse": {
+    "database": "surveillance",
+    "kql_endpoint": "${KQL_URI}"
+  },
+  "triggers": [
+    {
+      "id": "spoofing-detection",
+      "name": "Spoofing Alert Trigger",
+      "description": "Fires when a broker exhibits >80% cancel rate with <500ms latency on large orders within a 60-second window.",
+      "schedule": "PT30S",
+      "kql_query": "ORDER_BOOK_EVENTS\n| where event_time > ago(1m)\n| summarize\n    total_adds    = countif(action == 'add'),\n    total_cancels = countif(action == 'cancel'),\n    avg_qty       = avg(iff(action == 'add', toreal(quantity), real(null))),\n    avg_cancel_ms = avg(iff(action == 'cancel', toreal(datetime_diff('millisecond', event_time, prev(event_time))), real(null)))\n    by exchange_id, symbol, broker_id, bin(event_time, 1m)\n| where total_adds > 0\n| extend cancel_rate = todouble(total_cancels) / todouble(total_adds)\n| where cancel_rate >= 0.80\n    and avg_qty >= 10000\n    and avg_cancel_ms <= 500",
+      "condition": {
+        "field": "cancel_rate",
+        "operator": "greaterThanOrEqual",
+        "threshold": 0.80
+      },
+      "actions": [
+        {
+          "type": "webhook",
+          "name": "NotifyInterventionAgent",
+          "endpoint": "${INTERVENTION_AGENT_WEBHOOK_URL}",
+          "method": "POST",
+          "headers": {
+            "Content-Type": "application/json",
+            "X-Source": "DataActivator"
+          },
+          "body_template": {
+            "alert_type": "SPOOFING",
+            "exchange_id": "{{exchange_id}}",
+            "symbol": "{{symbol}}",
+            "broker_id": "{{broker_id}}",
+            "cancel_rate": "{{cancel_rate}}",
+            "avg_cancel_ms": "{{avg_cancel_ms}}",
+            "avg_order_qty": "{{avg_qty}}",
+            "detected_at": "{{event_time}}",
+            "source": "DataActivator/SpoofingReflex"
+          }
+        },
+        {
+          "type": "teams_notification",
+          "name": "TeamsAlert",
+          "channel_webhook": "${TEAMS_WEBHOOK_URL}",
+          "message_template": "🚨 **SPOOFING DETECTED** | {{exchange_id}} / {{symbol}} | Broker: {{broker_id}} | Cancel rate: {{cancel_rate | percent}} | Avg cancel: {{avg_cancel_ms}}ms"
+        }
+      ]
+    },
+    {
+      "id": "layering-detection",
+      "name": "Layering Alert Trigger",
+      "description": "Fires when a broker places orders at ≥5 distinct price levels with ≥70% cancellation fraction plus opposite-side orders within 2 minutes.",
+      "schedule": "PT60S",
+      "kql_query": "ORDER_BOOK_EVENTS\n| where event_time > ago(2m)\n| summarize\n    price_levels  = dcount(price),\n    total_adds    = countif(action == 'add'),\n    total_cancels = countif(action == 'cancel')\n    by exchange_id, symbol, broker_id, side, bin(event_time, 2m)\n| where total_adds > 0\n| extend cancel_fraction = todouble(total_cancels) / todouble(total_adds)\n| where price_levels >= 5 and cancel_fraction >= 0.70",
+      "condition": {
+        "field": "price_levels",
+        "operator": "greaterThanOrEqual",
+        "threshold": 5
+      },
+      "actions": [
+        {
+          "type": "webhook",
+          "name": "NotifyInterventionAgent",
+          "endpoint": "${INTERVENTION_AGENT_WEBHOOK_URL}",
+          "method": "POST",
+          "body_template": {
+            "alert_type": "LAYERING",
+            "exchange_id": "{{exchange_id}}",
+            "symbol": "{{symbol}}",
+            "broker_id": "{{broker_id}}",
+            "side": "{{side}}",
+            "price_levels": "{{price_levels}}",
+            "cancel_fraction": "{{cancel_fraction}}",
+            "detected_at": "{{event_time}}",
+            "source": "DataActivator/LayeringReflex"
+          }
+        },
+        {
+          "type": "teams_notification",
+          "name": "TeamsAlert",
+          "channel_webhook": "${TEAMS_WEBHOOK_URL}",
+          "message_template": "🚨 **LAYERING DETECTED** | {{exchange_id}} / {{symbol}} | Broker: {{broker_id}} | {{price_levels}} price levels | Cancel: {{cancel_fraction | percent}}"
+        }
+      ]
+    },
+    {
+      "id": "wash-trading-detection",
+      "name": "Wash Trading Alert Trigger",
+      "description": "Fires when ≥3 trades are detected between accounts sharing the same ultimate beneficial owner within a 10-minute window.",
+      "schedule": "PT5M",
+      "kql_query": "TRADES\n| where event_time > ago(10m)\n| where buyer_id != seller_id\n| join kind=inner (\n    BROKER_OWNERSHIP\n    | project account_id, ultimate_owner_buyer = ultimate_owner\n) on $left.buyer_id == $right.account_id\n| join kind=inner (\n    BROKER_OWNERSHIP\n    | project account_id, ultimate_owner_seller = ultimate_owner\n) on $left.seller_id == $right.account_id\n| where ultimate_owner_buyer == ultimate_owner_seller\n| summarize\n    wash_count  = count(),\n    wash_volume = sum(quantity),\n    account_a   = any(buyer_id),\n    account_b   = any(seller_id)\n    by symbol, exchange_id, ultimate_owner = ultimate_owner_buyer, bin(event_time, 10m)\n| where wash_count >= 3",
+      "condition": {
+        "field": "wash_count",
+        "operator": "greaterThanOrEqual",
+        "threshold": 3
+      },
+      "actions": [
+        {
+          "type": "webhook",
+          "name": "NotifyInterventionAgent",
+          "endpoint": "${INTERVENTION_AGENT_WEBHOOK_URL}",
+          "method": "POST",
+          "body_template": {
+            "alert_type": "WASH_TRADING",
+            "exchange_id": "{{exchange_id}}",
+            "symbol": "{{symbol}}",
+            "ultimate_owner": "{{ultimate_owner}}",
+            "account_a": "{{account_a}}",
+            "account_b": "{{account_b}}",
+            "wash_count": "{{wash_count}}",
+            "wash_volume": "{{wash_volume}}",
+            "detected_at": "{{event_time}}",
+            "source": "DataActivator/WashTradingReflex"
+          }
+        },
+        {
+          "type": "teams_notification",
+          "name": "TeamsAlert",
+          "channel_webhook": "${TEAMS_WEBHOOK_URL}",
+          "message_template": "🚨 **WASH TRADING DETECTED** | {{exchange_id}} / {{symbol}} | UBO: {{ultimate_owner}} | {{wash_count}} trades | Volume: {{wash_volume}}"
+        }
+      ]
+    },
+    {
+      "id": "volume-anomaly-detection",
+      "name": "Volume Anomaly Alert Trigger",
+      "description": "Fires when 1-minute trade volume exceeds the rolling 60-minute mean by ≥3 standard deviations (Z-score ≥ 3.0).",
+      "schedule": "PT1M",
+      "kql_query": "let volume_series =\n    TRADES\n    | where event_time > ago(1h)\n    | summarize volume_1m = sum(quantity)\n        by symbol, exchange_id, bin(event_time, 1m);\nvolume_series\n| join kind=inner (\n    volume_series\n    | summarize\n        mean_volume_1h = avg(volume_1m),\n        std_volume_1h  = stdev(volume_1m)\n        by symbol, exchange_id\n) on symbol, exchange_id\n| extend z_score = iff(\n    std_volume_1h > 0,\n    (volume_1m - mean_volume_1h) / std_volume_1h,\n    0.0\n)\n| where z_score >= 3.0\n| where event_time > ago(2m)",
+      "condition": {
+        "field": "z_score",
+        "operator": "greaterThanOrEqual",
+        "threshold": 3.0
+      },
+      "actions": [
+        {
+          "type": "webhook",
+          "name": "NotifyInterventionAgent",
+          "endpoint": "${INTERVENTION_AGENT_WEBHOOK_URL}",
+          "method": "POST",
+          "body_template": {
+            "alert_type": "VOLUME_SPIKE",
+            "exchange_id": "{{exchange_id}}",
+            "symbol": "{{symbol}}",
+            "volume_1m": "{{volume_1m}}",
+            "mean_volume_1h": "{{mean_volume_1h}}",
+            "z_score": "{{z_score}}",
+            "detected_at": "{{event_time}}",
+            "source": "DataActivator/VolumeAnomalyReflex"
+          }
+        },
+        {
+          "type": "teams_notification",
+          "name": "TeamsAlert",
+          "channel_webhook": "${TEAMS_WEBHOOK_URL}",
+          "message_template": "⚠️ **VOLUME SPIKE** | {{exchange_id}} / {{symbol}} | Z-score: {{z_score}} | Volume: {{volume_1m}} (mean: {{mean_volume_1h}})"
+        }
+      ]
+    }
+  ],
+  "environment_variables": {
+    "KQL_URI": "Fabric Eventhouse KQL query URI",
+    "INTERVENTION_AGENT_WEBHOOK_URL": "HTTP webhook URL of the Intervention Agent API (deployed on ACA or Azure Functions)",
+    "TEAMS_WEBHOOK_URL": "Microsoft Teams incoming webhook URL for human-readable alerts"
+  },
+  "deployment_notes": [
+    "1. Create a Data Activator Reflex in the Fabric workspace via the Fabric portal.",
+    "2. Connect the Reflex to the Eventhouse 'surveillance' database as the data source.",
+    "3. Import this file or paste each trigger KQL query into the Reflex editor.",
+    "4. Set environment variable values (KQL_URI, webhook URLs) in the Reflex secrets store.",
+    "5. Enable each trigger and verify sub-second detection in the Reflex monitoring view.",
+    "6. The webhook action calls the Intervention Agent API which opens an InterventionCase and notifies the regulator.",
+    "7. The Teams notification provides a human-readable alert to the surveillance desk."
+  ]
+}

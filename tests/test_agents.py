@@ -628,5 +628,417 @@ class TestFullPipeline(unittest.TestCase):
         self.assertEqual(report.case_id, cases[0].case_id)
 
 
+# ---------------------------------------------------------------------------
+# BeneficialOwnershipGraph tests (Task 5: Ontology Graph)
+# ---------------------------------------------------------------------------
+
+from agents import BeneficialOwnershipGraph, EntityType, RelationshipType
+
+
+class TestBeneficialOwnershipGraph(unittest.TestCase):
+    """Unit tests for the ontology graph entity/relationship model."""
+
+    def _build_simple_graph(self) -> BeneficialOwnershipGraph:
+        """
+        Graph:
+            BROKER_A → FUND_X  (parent_entity)
+            BROKER_B → FUND_X  (parent_entity)
+            FUND_X   → UBO_1   (beneficial_owner)
+            BROKER_C → FUND_Y  (parent_entity)
+            FUND_Y   → UBO_2   (beneficial_owner)
+        """
+        g = BeneficialOwnershipGraph()
+        for eid, etype in [
+            ("BROKER_A", EntityType.BROKER),
+            ("BROKER_B", EntityType.BROKER),
+            ("BROKER_C", EntityType.BROKER),
+            ("FUND_X",   EntityType.FUND),
+            ("FUND_Y",   EntityType.FUND),
+            ("UBO_1",    EntityType.PERSON),
+            ("UBO_2",    EntityType.PERSON),
+        ]:
+            g.add_entity(eid, etype)
+        g.add_relationship("BROKER_A", "FUND_X", RelationshipType.PARENT_ENTITY)
+        g.add_relationship("BROKER_B", "FUND_X", RelationshipType.PARENT_ENTITY)
+        g.add_relationship("FUND_X",   "UBO_1",  RelationshipType.BENEFICIAL_OWNER)
+        g.add_relationship("BROKER_C", "FUND_Y", RelationshipType.PARENT_ENTITY)
+        g.add_relationship("FUND_Y",   "UBO_2",  RelationshipType.BENEFICIAL_OWNER)
+        return g
+
+    def test_add_entity_and_retrieve(self):
+        g = BeneficialOwnershipGraph()
+        g.add_entity("BROKER_X", EntityType.BROKER, {"exchange": "SGX"})
+        node = g.get_entity("BROKER_X")
+        self.assertIsNotNone(node)
+        self.assertEqual(node.entity_type, EntityType.BROKER)
+        self.assertEqual(node.attributes["exchange"], "SGX")
+
+    def test_add_relationship(self):
+        g = BeneficialOwnershipGraph()
+        g.add_entity("A", EntityType.BROKER)
+        g.add_entity("B", EntityType.FUND)
+        g.add_relationship("A", "B", RelationshipType.PARENT_ENTITY)
+        self.assertEqual(len(g._out_edges["A"]), 1)
+        self.assertEqual(g._out_edges["A"][0].target_id, "B")
+
+    def test_bidirectional_relationship(self):
+        g = BeneficialOwnershipGraph()
+        g.add_entity("X", EntityType.SYMBOL)
+        g.add_entity("Y", EntityType.SYMBOL)
+        g.add_relationship("X", "Y", RelationshipType.CORRELATED_WITH, bidirectional=True)
+        self.assertEqual(len(g._out_edges["X"]), 1)
+        self.assertEqual(len(g._out_edges["Y"]), 1)
+
+    def test_get_ubos_direct(self):
+        """A person entity is its own UBO."""
+        g = BeneficialOwnershipGraph()
+        g.add_entity("PERSON_A", EntityType.PERSON)
+        ubos = g.get_ubos("PERSON_A")
+        self.assertIn("PERSON_A", ubos)
+
+    def test_get_ubos_chain(self):
+        """Broker → Fund → Person should resolve to Person."""
+        g = self._build_simple_graph()
+        ubos_a = g.get_ubos("BROKER_A")
+        self.assertIn("UBO_1", ubos_a)
+        self.assertNotIn("UBO_2", ubos_a)
+
+    def test_is_same_ubo_true(self):
+        """BROKER_A and BROKER_B share UBO_1 via FUND_X."""
+        g = self._build_simple_graph()
+        self.assertTrue(g.is_same_ubo("BROKER_A", "BROKER_B"))
+
+    def test_is_same_ubo_false(self):
+        """BROKER_A and BROKER_C have different UBOs."""
+        g = self._build_simple_graph()
+        self.assertFalse(g.is_same_ubo("BROKER_A", "BROKER_C"))
+
+    def test_is_same_ubo_unknown_entity(self):
+        """Unknown entities have no UBOs → False."""
+        g = self._build_simple_graph()
+        self.assertFalse(g.is_same_ubo("UNKNOWN_X", "BROKER_A"))
+
+    def test_get_shared_ubos(self):
+        g = self._build_simple_graph()
+        shared = g.get_shared_ubos("BROKER_A", "BROKER_B")
+        self.assertIn("UBO_1", shared)
+
+    def test_is_same_ubo_via_linked_to(self):
+        """Brokers linked via linked_to should share UBOs through that link."""
+        g = BeneficialOwnershipGraph()
+        for eid, etype in [
+            ("BROKER_LINKED_A", EntityType.BROKER),
+            ("BROKER_LINKED_B", EntityType.BROKER),
+            ("HOLDING_Z", EntityType.HOLDING),
+            ("UBO_Z", EntityType.PERSON),
+        ]:
+            g.add_entity(eid, etype)
+        g.add_relationship("BROKER_LINKED_A", "BROKER_LINKED_B",
+                           RelationshipType.LINKED_TO, bidirectional=True)
+        g.add_relationship("BROKER_LINKED_A", "HOLDING_Z", RelationshipType.PARENT_ENTITY)
+        g.add_relationship("HOLDING_Z", "UBO_Z", RelationshipType.BENEFICIAL_OWNER)
+        # BROKER_LINKED_B is linked to BROKER_LINKED_A which has UBO_Z
+        ubos_b = g.get_ubos("BROKER_LINKED_B", max_hops=5)
+        self.assertIn("UBO_Z", ubos_b)
+
+    def test_get_applicable_regulations_by_exchange(self):
+        g = BeneficialOwnershipGraph.build_default()
+        regs = g.get_applicable_regulations("SGX")
+        self.assertGreater(len(regs), 0)
+        bodies = {r["regulatory_body"] for r in regs}
+        self.assertIn("MAS", bodies)
+
+    def test_get_applicable_regulations_filtered_by_type(self):
+        g = BeneficialOwnershipGraph.build_default()
+        regs = g.get_applicable_regulations("SGX", "SPOOFING")
+        self.assertGreater(len(regs), 0)
+        for reg in regs:
+            self.assertIn("SPOOFING", reg["governs"])
+
+    def test_get_applicable_regulations_hkex(self):
+        g = BeneficialOwnershipGraph.build_default()
+        regs = g.get_applicable_regulations("HKEX")
+        bodies = {r["regulatory_body"] for r in regs}
+        self.assertIn("SFC", bodies)
+
+    def test_get_applicable_regulations_nse(self):
+        g = BeneficialOwnershipGraph.build_default()
+        regs = g.get_applicable_regulations("NSE")
+        bodies = {r["regulatory_body"] for r in regs}
+        self.assertIn("SEBI", bodies)
+
+    def test_get_related_instruments(self):
+        g = BeneficialOwnershipGraph.build_default()
+        # OCBC is listed on SGX; DBS is correlated with OCBC
+        related = g.get_related_instruments("OCBC", "SGX")
+        rel_types = {r[2] for r in related}
+        self.assertTrue(len(related) > 0)
+
+    def test_to_dict_and_from_dict(self):
+        g = self._build_simple_graph()
+        d = g.to_dict()
+        g2 = BeneficialOwnershipGraph.from_dict(d)
+        self.assertEqual(len(g), len(g2))
+        self.assertTrue(g2.is_same_ubo("BROKER_A", "BROKER_B"))
+
+    def test_len(self):
+        g = self._build_simple_graph()
+        self.assertEqual(len(g), 7)
+
+    def test_repr(self):
+        g = self._build_simple_graph()
+        r = repr(g)
+        self.assertIn("nodes=7", r)
+
+    def test_build_default_minimum_depth(self):
+        """Default graph must have broker → fund → holding → person (≥3 levels deep)."""
+        g = BeneficialOwnershipGraph.build_default()
+        # BROKER_WASH_SGX_003 and BROKER_WASH_SGX_004_ALT share PERSON_UBO_SMITH
+        self.assertTrue(g.is_same_ubo("BROKER_WASH_SGX_003", "BROKER_WASH_SGX_004_ALT"))
+        ubos = g.get_ubos("BROKER_WASH_SGX_003")
+        self.assertIn("PERSON_UBO_SMITH", ubos)
+
+
+# ---------------------------------------------------------------------------
+# PatternDetectionAgent + ontology graph tests
+# ---------------------------------------------------------------------------
+
+class TestPatternDetectionAgentWithOntology(unittest.TestCase):
+    """Wash trading detection via UBO graph traversal (Strategy 2)."""
+
+    def _build_wash_graph(self) -> BeneficialOwnershipGraph:
+        """Graph where BROKER_X and BROKER_Y share the same UBO."""
+        g = BeneficialOwnershipGraph()
+        for eid, etype in [
+            ("BROKER_X", EntityType.BROKER),
+            ("BROKER_Y", EntityType.BROKER),
+            ("FUND_COMMON", EntityType.FUND),
+            ("UBO_COMMON", EntityType.PERSON),
+        ]:
+            g.add_entity(eid, etype)
+        g.add_relationship("BROKER_X", "FUND_COMMON", RelationshipType.PARENT_ENTITY)
+        g.add_relationship("BROKER_Y", "FUND_COMMON", RelationshipType.PARENT_ENTITY)
+        g.add_relationship("FUND_COMMON", "UBO_COMMON", RelationshipType.BENEFICIAL_OWNER)
+        return g
+
+    def test_wash_detected_via_ubo_graph(self):
+        """Ontology-aware agent detects wash trading through UBO traversal."""
+        graph = self._build_wash_graph()
+        agent = PatternDetectionAgent(wash_window_s=600, ontology_graph=graph)
+        alerts = _collect_alerts(agent)
+
+        # BROKER_X and BROKER_Y share UBO but have no _WASH_ in their names
+        for i in range(5):
+            buyer, seller = ("BROKER_X", "BROKER_Y") if i % 2 == 0 else ("BROKER_Y", "BROKER_X")
+            agent.process_event(_trade(
+                buyer_id=buyer,
+                seller_id=seller,
+                quantity=50_000,
+                ts_offset=float(i) * 0.3,
+            ))
+
+        wash_alerts = [a for a in alerts if a.alert_type == "WASH_TRADING"]
+        self.assertGreater(len(wash_alerts), 0, "Expected WASH_TRADING via UBO graph")
+        ev = wash_alerts[0].evidence
+        self.assertEqual(ev.get("detection_method"), "ubo_graph")
+        self.assertIn("UBO_COMMON", ev.get("shared_ubos", []))
+
+    def test_no_wash_for_different_ubos_with_graph(self):
+        """Unrelated UBOs should not trigger wash trading with graph enabled."""
+        g = BeneficialOwnershipGraph()
+        for eid, etype in [
+            ("BROKER_INDEP_A", EntityType.BROKER),
+            ("BROKER_INDEP_B", EntityType.BROKER),
+            ("UBO_INDEP_1", EntityType.PERSON),
+            ("UBO_INDEP_2", EntityType.PERSON),
+        ]:
+            g.add_entity(eid, etype)
+        g.add_relationship("BROKER_INDEP_A", "UBO_INDEP_1", RelationshipType.BENEFICIAL_OWNER)
+        g.add_relationship("BROKER_INDEP_B", "UBO_INDEP_2", RelationshipType.BENEFICIAL_OWNER)
+
+        agent = PatternDetectionAgent(wash_window_s=600, ontology_graph=g)
+        alerts = _collect_alerts(agent)
+
+        for i in range(5):
+            buyer, seller = ("BROKER_INDEP_A", "BROKER_INDEP_B") if i % 2 == 0 else ("BROKER_INDEP_B", "BROKER_INDEP_A")
+            agent.process_event(_trade(
+                buyer_id=buyer,
+                seller_id=seller,
+                quantity=50_000,
+                ts_offset=float(i) * 0.3,
+            ))
+
+        wash_alerts = [a for a in alerts if a.alert_type == "WASH_TRADING"]
+        self.assertEqual(len(wash_alerts), 0, "Different UBOs should not trigger wash trading")
+
+    def test_detection_method_in_evidence_string_pattern(self):
+        """Without ontology, detection_method should be 'string_pattern'."""
+        agent = PatternDetectionAgent(wash_window_s=600)
+        alerts = _collect_alerts(agent)
+        acct_a = "BROKER_WASH_SGX_003"
+        acct_b = "BROKER_WASH_SGX_004_ALT"
+        for i in range(5):
+            buyer, seller = (acct_a, acct_b) if i % 2 == 0 else (acct_b, acct_a)
+            agent.process_event(_trade(buyer_id=buyer, seller_id=seller,
+                                       quantity=50_000, ts_offset=float(i) * 0.3))
+        wash_alerts = [a for a in alerts if a.alert_type == "WASH_TRADING"]
+        self.assertGreater(len(wash_alerts), 0)
+        self.assertEqual(wash_alerts[0].evidence.get("detection_method"), "string_pattern")
+
+
+# ---------------------------------------------------------------------------
+# AnomalyDetectionAgent + ML score provider tests
+# ---------------------------------------------------------------------------
+
+class TestAnomalyDetectionAgentMLScore(unittest.TestCase):
+    """ML score provider integration tests."""
+
+    def _build_baseline(self, agent, n_buckets=15, base_price=14.50, volume=100_000):
+        now = time.time()
+        for bucket in range(n_buckets):
+            bucket_start = now - (n_buckets - bucket) * 65
+            for j in range(5):
+                agent.process_event(_trade(
+                    price=base_price + bucket * 0.02,
+                    quantity=volume // 5,
+                    ts_offset=bucket_start - time.time() + j * 2,
+                ))
+        agent.flush()
+
+    def test_ml_score_included_in_evidence(self):
+        """When ml_score_provider is set, alert evidence contains ml_anomaly_score."""
+        constant_score = 0.92
+        ml_provider = lambda ex, sym, vwap, vol, cnt: constant_score
+
+        agent = AnomalyDetectionAgent(
+            price_z_threshold=2.5,
+            price_history_buckets=20,
+            ml_score_provider=ml_provider,
+        )
+        alerts = _collect_alerts(agent)
+        self._build_baseline(agent, n_buckets=20, base_price=14.50)
+
+        # Inject a large price spike to trigger a PRICE_ANOMALY alert
+        now = time.time()
+        for j in range(5):
+            agent.process_event(_trade(
+                price=14.50 * 1.30,
+                quantity=20_000,
+                ts_offset=now - time.time() + 120 + j,
+            ))
+        agent.flush()
+
+        price_alerts = [a for a in alerts if a.alert_type == "PRICE_ANOMALY"]
+        self.assertGreater(len(price_alerts), 0)
+        self.assertIn("ml_anomaly_score", price_alerts[0].evidence)
+        self.assertEqual(price_alerts[0].evidence["ml_anomaly_score"], constant_score)
+
+    def test_ml_score_provider_exception_is_swallowed(self):
+        """A crashing ml_score_provider should not prevent normal alert generation."""
+        def bad_provider(*args, **kwargs):
+            raise RuntimeError("model endpoint unavailable")
+
+        agent = AnomalyDetectionAgent(
+            price_z_threshold=2.5,
+            price_history_buckets=20,
+            ml_score_provider=bad_provider,
+        )
+        alerts = _collect_alerts(agent)
+        self._build_baseline(agent, n_buckets=20, base_price=14.50)
+
+        now = time.time()
+        for j in range(5):
+            agent.process_event(_trade(
+                price=14.50 * 1.30,
+                quantity=20_000,
+                ts_offset=now - time.time() + 120 + j,
+            ))
+        agent.flush()
+
+        price_alerts = [a for a in alerts if a.alert_type == "PRICE_ANOMALY"]
+        self.assertGreater(len(price_alerts), 0)
+        # ml_anomaly_score should be absent since provider crashed
+        self.assertNotIn("ml_anomaly_score", price_alerts[0].evidence)
+
+    def test_no_ml_score_without_provider(self):
+        """Without ml_score_provider, evidence should not have ml_anomaly_score."""
+        agent = AnomalyDetectionAgent(
+            price_z_threshold=2.5,
+            price_history_buckets=20,
+        )
+        alerts = _collect_alerts(agent)
+        self._build_baseline(agent, n_buckets=20, base_price=14.50)
+        now = time.time()
+        for j in range(5):
+            agent.process_event(_trade(
+                price=14.50 * 1.30,
+                quantity=20_000,
+                ts_offset=now - time.time() + 120 + j,
+            ))
+        agent.flush()
+        price_alerts = [a for a in alerts if a.alert_type == "PRICE_ANOMALY"]
+        self.assertGreater(len(price_alerts), 0)
+        self.assertNotIn("ml_anomaly_score", price_alerts[0].evidence)
+
+
+# ---------------------------------------------------------------------------
+# EvidenceCollectionAgent + ontology graph tests
+# ---------------------------------------------------------------------------
+
+class TestEvidenceCollectionAgentWithOntology(unittest.TestCase):
+    """Ontology-driven regulatory body resolution."""
+
+    def _make_case(self, exchange_id: str = "SGX", alert_type: str = "SPOOFING") -> InterventionCase:
+        alert = Alert(
+            alert_id="SPOOF-ONT-001",
+            agent_name="PatternDetectionAgent",
+            alert_type=alert_type,
+            severity=AlertSeverity.HIGH,
+            exchange_id=exchange_id,
+            symbol="OCBC",
+            detected_at=_ts(),
+            description="Test spoofing for ontology evidence",
+            confidence_score=0.91,
+            involved_entities=["BROKER_SPOOF_SGX_001"],
+            evidence={"cancel_rate": 0.88},
+        )
+        return InterventionCase(case_id=f"CASE-ONT-{exchange_id}", alert=alert)
+
+    def test_ontology_resolves_mas_for_sgx(self):
+        g = BeneficialOwnershipGraph.build_default()
+        agent = EvidenceCollectionAgent(ontology_graph=g)
+        case = self._make_case(exchange_id="SGX", alert_type="SPOOFING")
+        report = agent.compile_case(case, all_events=[])
+        self.assertEqual(report.regulatory_body, "MAS")
+
+    def test_ontology_resolves_sfc_for_hkex(self):
+        g = BeneficialOwnershipGraph.build_default()
+        agent = EvidenceCollectionAgent(ontology_graph=g)
+        case = self._make_case(exchange_id="HKEX", alert_type="LAYERING")
+        report = agent.compile_case(case, all_events=[])
+        self.assertEqual(report.regulatory_body, "SFC")
+
+    def test_ontology_resolves_sebi_for_nse(self):
+        g = BeneficialOwnershipGraph.build_default()
+        agent = EvidenceCollectionAgent(ontology_graph=g)
+        case = self._make_case(exchange_id="NSE", alert_type="WASH_TRADING")
+        report = agent.compile_case(case, all_events=[])
+        self.assertEqual(report.regulatory_body, "SEBI")
+
+    def test_fallback_to_regulator_map_without_graph(self):
+        """Without ontology graph, falls back to REGULATOR_MAP."""
+        agent = EvidenceCollectionAgent()
+        case = self._make_case(exchange_id="SGX")
+        report = agent.compile_case(case, all_events=[])
+        self.assertEqual(report.regulatory_body, "MAS")
+
+    def test_unknown_exchange_returns_unknown(self):
+        """Unknown exchange without graph → 'UNKNOWN'."""
+        agent = EvidenceCollectionAgent()
+        case = self._make_case(exchange_id="UNKNOWN_EXCHANGE")
+        report = agent.compile_case(case, all_events=[])
+        self.assertEqual(report.regulatory_body, "UNKNOWN")
+
+
 if __name__ == "__main__":
     unittest.main()

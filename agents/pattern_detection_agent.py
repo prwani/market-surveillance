@@ -13,6 +13,9 @@ Detects the three core manipulation patterns from order book and trade events:
 
     3. Wash Trading – the same beneficial owner appears on both sides of a trade
                     (using different broker IDs) to inflate reported volume.
+                    When an ``ontology_graph`` is provided, multi-level UBO
+                    resolution via graph traversal replaces the naive string-
+                    pattern check.
 
 All rules are implemented as sliding-window accumulators that mirror the KQL
 detection logic described in the README / Section 5.2.
@@ -26,6 +29,7 @@ from dataclasses import dataclass, field
 from typing import Any, Deque, Dict, List, Optional
 
 from .base_agent import Alert, AlertSeverity, BaseAgent, _utcnow_iso
+from .ontology_graph import BeneficialOwnershipGraph
 
 
 # ---------------------------------------------------------------------------
@@ -86,6 +90,13 @@ class PatternDetectionAgent(BaseAgent):
     Internal state is maintained per (exchange_id, symbol) key.  Only events
     within the relevant look-back window are kept in memory; older records are
     discarded to bound memory usage.
+
+    Parameters
+    ----------
+    ontology_graph : BeneficialOwnershipGraph, optional
+        When provided, wash-trading detection uses graph traversal to resolve
+        Ultimate Beneficial Owners (UBOs) through multi-level ownership
+        chains instead of the fallback string-pattern heuristic.
     """
 
     name = "PatternDetectionAgent"
@@ -95,11 +106,13 @@ class PatternDetectionAgent(BaseAgent):
         spoofing_window_s: float = SPOOFING_WINDOW_SECONDS,
         layering_window_s: float = LAYERING_WINDOW_SECONDS,
         wash_window_s: float = WASH_WINDOW_SECONDS,
+        ontology_graph: Optional[BeneficialOwnershipGraph] = None,
     ) -> None:
         super().__init__()
         self._spoofing_window = spoofing_window_s
         self._layering_window = layering_window_s
         self._wash_window = wash_window_s
+        self._ontology_graph = ontology_graph
 
         # (exchange, symbol) → deque of _OrderRecord
         self._order_windows: Dict[str, Deque[_OrderRecord]] = defaultdict(deque)
@@ -362,9 +375,17 @@ class PatternDetectionAgent(BaseAgent):
     ) -> None:
         """
         Within the wash window, detect trades where the same beneficial
-        owner appears on both sides.  Since we do not have a real ownership
-        table, we flag brokers whose IDs share a known naming pattern
-        (``BROKER_WASH_*_A`` / ``BROKER_WASH_*_B``) or where buyer==seller.
+        owner appears on both sides.
+
+        Detection strategy (in order of priority):
+        1. **Graph-based UBO resolution** — when an ``ontology_graph`` is
+           available, traverse ownership chains to find if buyer and seller
+           share a common UBO within 4 hops.  This handles complex multi-
+           level structures (Broker → Fund → Holding → Person).
+        2. **Direct match** — buyer_id == seller_id fires immediately.
+        3. **String-pattern fallback** — brokers whose IDs contain
+           ``_WASH_`` are flagged when ≥3 back-and-forth trades are seen
+           (preserves backward compatibility when no graph is provided).
         """
         window = self._trade_windows[key]
         cutoff = now_epoch - self._wash_window
@@ -375,7 +396,7 @@ class PatternDetectionAgent(BaseAgent):
         seller_id = event.get("seller_id", "")
         exchange_id, symbol = key.split(":", 1)
 
-        # Direct match: buyer == seller
+        # ── Strategy 1: Direct match ───────────────────────────────────
         if buyer_id == seller_id:
             self._emit_alert(Alert(
                 alert_id=f"WASH-{uuid.uuid4().hex[:8].upper()}",
@@ -390,10 +411,55 @@ class PatternDetectionAgent(BaseAgent):
                 ),
                 confidence_score=ALERT_CONFIDENCE_WASH,
                 involved_entities=[buyer_id],
-                evidence={"buyer_id": buyer_id, "seller_id": seller_id},
+                evidence={"buyer_id": buyer_id, "seller_id": seller_id,
+                          "detection_method": "direct_match"},
             ))
             return
 
+        # ── Strategy 2: Graph-based UBO resolution ─────────────────────
+        if self._ontology_graph is not None:
+            shared_ubos = self._ontology_graph.get_shared_ubos(buyer_id, seller_id, max_hops=4)
+            if shared_ubos:
+                pair_key = f"{min(buyer_id, seller_id)}|{max(buyer_id, seller_id)}"
+                pair_trades = [
+                    r for r in window
+                    if {r.buyer_id, r.seller_id} == {buyer_id, seller_id}
+                ]
+                if len(pair_trades) >= WASH_MIN_TRADES:
+                    alert_key = f"{key}:{pair_key}"
+                    last_alert = self._alerted_wash.get(alert_key, 0.0)
+                    if now_epoch - last_alert >= self._wash_window:
+                        self._alerted_wash[alert_key] = now_epoch
+                        total_vol = sum(r.quantity for r in pair_trades)
+                        self._emit_alert(Alert(
+                            alert_id=f"WASH-{uuid.uuid4().hex[:8].upper()}",
+                            agent_name=self.name,
+                            alert_type="WASH_TRADING",
+                            severity=AlertSeverity.HIGH,
+                            exchange_id=exchange_id,
+                            symbol=symbol,
+                            detected_at=_utcnow_iso(),
+                            description=(
+                                f"Wash trading detected via UBO graph traversal: "
+                                f"{len(pair_trades)} trades between {buyer_id} and "
+                                f"{seller_id} share beneficial owner(s) "
+                                f"{', '.join(sorted(shared_ubos))} "
+                                f"(total volume: {total_vol:,})."
+                            ),
+                            confidence_score=ALERT_CONFIDENCE_WASH,
+                            involved_entities=[buyer_id, seller_id],
+                            evidence={
+                                "trade_count": len(pair_trades),
+                                "total_volume": total_vol,
+                                "account_a": buyer_id,
+                                "account_b": seller_id,
+                                "shared_ubos": sorted(shared_ubos),
+                                "detection_method": "ubo_graph",
+                            },
+                        ))
+            return  # graph was consulted; skip string-pattern fallback
+
+        # ── Strategy 3: String-pattern fallback ────────────────────────
         # Pattern-based detection: "_WASH_" in both IDs → likely same beneficial owner
         if "_WASH_" in buyer_id and "_WASH_" in seller_id:
             # Aggregate wash trades in window for this pair
@@ -428,5 +494,6 @@ class PatternDetectionAgent(BaseAgent):
                             "total_volume": total_vol,
                             "account_a": buyer_id,
                             "account_b": seller_id,
+                            "detection_method": "string_pattern",
                         },
                     ))

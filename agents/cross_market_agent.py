@@ -31,6 +31,7 @@ from datetime import datetime
 from typing import Any, Deque, Dict, List, Optional, Tuple
 
 from .base_agent import Alert, AlertSeverity, BaseAgent, _utcnow_iso
+from .ontology_graph import BeneficialOwnershipGraph, RelationshipType
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +89,10 @@ class CrossMarketAgent(BaseAgent):
         Pearson |r| above which a cross-market manipulation alert is raised.
     history_buckets : int
         Number of 1-minute VWAP buckets to retain per (exchange, symbol).
+    ontology_graph : BeneficialOwnershipGraph, optional
+        When provided, the agent also discovers related instruments via graph
+        traversal (``correlated_with``, ``has_derivative``, ``listed_on``)
+        in addition to the static ``symbol_aliases`` map.
     """
 
     name = "CrossMarketAgent"
@@ -99,6 +104,7 @@ class CrossMarketAgent(BaseAgent):
         volume_sync_ratio: float = VOLUME_SYNC_RATIO,
         history_buckets: int = HISTORY_BUCKETS,
         bucket_size_seconds: int = BUCKET_SIZE_SECONDS,
+        ontology_graph: Optional[BeneficialOwnershipGraph] = None,
     ) -> None:
         super().__init__()
         self._symbol_aliases = symbol_aliases or {}
@@ -106,6 +112,7 @@ class CrossMarketAgent(BaseAgent):
         self._vol_sync_ratio = volume_sync_ratio
         self._history_buckets = history_buckets
         self._bucket_size = bucket_size_seconds
+        self._ontology_graph = ontology_graph
 
         # (exchange, symbol) → deque of _VWAPRecord
         self._vwap_history: Dict[Tuple[str, str], Deque[_VWAPRecord]] = defaultdict(
@@ -150,6 +157,26 @@ class CrossMarketAgent(BaseAgent):
                 return canonical
         return symbol  # use the ticker itself as canonical name
 
+    def _get_ontology_partner_exchanges(
+        self, exchange_id: str, symbol: str
+    ) -> List[Tuple[str, str]]:
+        """
+        Return (symbol, exchange) pairs related to this instrument via the
+        ontology graph (``listed_on``, ``correlated_with``, ``has_derivative``).
+
+        Returns an empty list when no ``ontology_graph`` is configured.
+        """
+        if self._ontology_graph is None:
+            return []
+        related = self._ontology_graph.get_related_instruments(symbol, exchange_id)
+        partners = []
+        for rel_symbol, rel_exchange, rel_type in related:
+            if rel_exchange and rel_exchange != exchange_id:
+                partners.append((rel_symbol, rel_exchange))
+            elif rel_type.value == "listed_on" and rel_exchange != exchange_id:
+                partners.append((symbol, rel_exchange))
+        return partners
+
     def _ingest(self, event: Dict[str, Any]) -> None:
         exchange_id = event.get("exchange_id", "")
         symbol = event.get("symbol", "")
@@ -183,10 +210,18 @@ class CrossMarketAgent(BaseAgent):
         self._vwap_history[key].append(record)
 
         # Find all other exchanges that share the same canonical symbol
+        # via the static alias map
         partner_exchanges = [
             ex for (ex, sym) in self._vwap_history.keys()
             if ex != exchange_id and self._canonical_symbol(ex, sym) == canonical
         ]
+
+        # Additionally discover partners via the ontology graph
+        ontology_partners = self._get_ontology_partner_exchanges(exchange_id, symbol)
+        for partner_sym, partner_ex in ontology_partners:
+            partner_key = (partner_ex, partner_sym)
+            if partner_key in self._vwap_history and partner_ex not in partner_exchanges:
+                partner_exchanges.append(partner_ex)
 
         for partner_exchange in partner_exchanges:
             partner_symbol = self._get_symbol(partner_exchange, canonical)

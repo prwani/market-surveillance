@@ -27,7 +27,7 @@ import uuid
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Deque, Dict, List, Optional, Tuple
+from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
 
 from .base_agent import Alert, AlertSeverity, BaseAgent, _utcnow_iso
 
@@ -117,6 +117,19 @@ class AnomalyDetectionAgent(BaseAgent):
 
     Aggregates trade events into 1-minute VWAP buckets, then applies
     Z-score anomaly detection using a rolling history of completed buckets.
+
+    Parameters
+    ----------
+    ml_score_provider : callable, optional
+        An optional callback with signature::
+
+            (exchange_id: str, symbol: str, vwap: float, volume: float,
+             trade_count: int) -> float
+
+        When provided, the returned ML anomaly probability (0.0–1.0) is
+        included in alert evidence under ``"ml_anomaly_score"``.  This
+        supports consuming scores from the FabricIQ ML Registry
+        (``market-anomaly-detector-v3``) or any other model endpoint.
     """
 
     name = "AnomalyDetectionAgent"
@@ -128,6 +141,7 @@ class AnomalyDetectionAgent(BaseAgent):
         price_z_threshold: float = PRICE_Z_THRESHOLD,
         volume_z_threshold: float = VOLUME_Z_THRESHOLD,
         bucket_size_seconds: int = BUCKET_SIZE_SECONDS,
+        ml_score_provider: Optional[Callable[..., float]] = None,
     ) -> None:
         super().__init__()
         self._price_history_buckets = price_history_buckets
@@ -135,6 +149,7 @@ class AnomalyDetectionAgent(BaseAgent):
         self._price_z_threshold = price_z_threshold
         self._volume_z_threshold = volume_z_threshold
         self._bucket_size = bucket_size_seconds
+        self._ml_score_provider = ml_score_provider
 
         # Per (exchange, symbol) current open bucket
         self._current_bucket: Dict[str, _MinuteBucket] = {}
@@ -203,6 +218,16 @@ class AnomalyDetectionAgent(BaseAgent):
         price_stats = self._price_stats[key]
         volume_stats = self._volume_stats[key]
 
+        # Optionally obtain an ML anomaly score for this bucket
+        ml_score: Optional[float] = None
+        if self._ml_score_provider is not None:
+            try:
+                ml_score = float(self._ml_score_provider(
+                    exchange_id, symbol, vwap, volume, bucket.trade_count
+                ))
+            except Exception:
+                pass  # ML scoring failure must not disrupt statistical detection
+
         # Need at least a few history points before we start alerting
         if len(price_stats) >= 5:
             price_z = price_stats.z_score(vwap)
@@ -213,6 +238,18 @@ class AnomalyDetectionAgent(BaseAgent):
                 self._last_alerted_bucket[key] = bucket.bucket_id
                 direction = "spike" if price_z > 0 else "crash"
                 magnitude_pct = abs((vwap - price_stats.mean()) / price_stats.mean() * 100)
+                evidence: Dict[str, Any] = {
+                    "vwap": round(vwap, 4),
+                    "rolling_mean": round(price_stats.mean(), 4),
+                    "rolling_std": round(price_stats.std(), 4),
+                    "z_score": round(price_z, 2),
+                    "magnitude_pct": round(magnitude_pct, 2),
+                    "direction": direction,
+                    "bucket_id": bucket.bucket_id,
+                    "trade_count": bucket.trade_count,
+                }
+                if ml_score is not None:
+                    evidence["ml_anomaly_score"] = round(ml_score, 4)
                 self._emit_alert(Alert(
                     alert_id=f"ANOM-PRICE-{uuid.uuid4().hex[:8].upper()}",
                     agent_name=self.name,
@@ -232,20 +269,21 @@ class AnomalyDetectionAgent(BaseAgent):
                         f"Magnitude: {magnitude_pct:.2f}%."
                     ),
                     confidence_score=min(1.0, abs(price_z) / (self._price_z_threshold * 2)),
-                    evidence={
-                        "vwap": round(vwap, 4),
-                        "rolling_mean": round(price_stats.mean(), 4),
-                        "rolling_std": round(price_stats.std(), 4),
-                        "z_score": round(price_z, 2),
-                        "magnitude_pct": round(magnitude_pct, 2),
-                        "direction": direction,
-                        "bucket_id": bucket.bucket_id,
-                        "trade_count": bucket.trade_count,
-                    },
+                    evidence=evidence,
                 ))
 
             if volume_z >= self._volume_z_threshold and bucket.bucket_id != last:
                 self._last_alerted_bucket[key] = bucket.bucket_id
+                vol_evidence: Dict[str, Any] = {
+                    "volume": volume,
+                    "rolling_mean_volume": round(volume_stats.mean(), 0),
+                    "rolling_std_volume": round(volume_stats.std(), 0),
+                    "z_score": round(volume_z, 2),
+                    "bucket_id": bucket.bucket_id,
+                    "trade_count": bucket.trade_count,
+                }
+                if ml_score is not None:
+                    vol_evidence["ml_anomaly_score"] = round(ml_score, 4)
                 self._emit_alert(Alert(
                     alert_id=f"ANOM-VOL-{uuid.uuid4().hex[:8].upper()}",
                     agent_name=self.name,
@@ -260,14 +298,7 @@ class AnomalyDetectionAgent(BaseAgent):
                         f"{volume_stats.mean():,.0f})."
                     ),
                     confidence_score=min(1.0, volume_z / (self._volume_z_threshold * 2)),
-                    evidence={
-                        "volume": volume,
-                        "rolling_mean_volume": round(volume_stats.mean(), 0),
-                        "rolling_std_volume": round(volume_stats.std(), 0),
-                        "z_score": round(volume_z, 2),
-                        "bucket_id": bucket.bucket_id,
-                        "trade_count": bucket.trade_count,
-                    },
+                    evidence=vol_evidence,
                 ))
 
         # Commit bucket values to rolling history
