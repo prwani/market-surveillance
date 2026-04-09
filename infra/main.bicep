@@ -166,26 +166,6 @@ resource kvRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' =
 }
 
 // ──────────────────────────────────────────────
-// Streaming Workers — per-exchange partitioned
-// ──────────────────────────────────────────────
-var exchangeWorkers = ['SGX', 'HKEX', 'NSE', 'cross-market']
-
-module workerApps 'modules/worker-app.bicep' = [for exchange in exchangeWorkers: {
-  name: 'workerDeploy-${exchange}'
-  params: {
-    location: location
-    environmentName: environmentName
-    projectName: projectName
-    tags: tags
-    containerAppEnvId: containerApp.outputs.environmentId
-    acrLoginServer: acr.properties.loginServer
-    acrUsername: acr.listCredentials().username
-    acrPassword: acr.listCredentials().passwords[0].value
-    exchangeFilter: exchange
-  }
-}]
-
-// ──────────────────────────────────────────────
 // Outputs — azd reads these as environment values
 // ──────────────────────────────────────────────
 @description('Fabric capacity name')
@@ -208,9 +188,6 @@ output containerAppEnvironment string = containerApp.outputs.environmentName
 
 @description('Container App name')
 output containerAppName string = containerApp.outputs.appName
-
-@description('Worker App names (per-exchange)')
-output workerAppNames array = [for (exchange, i) in exchangeWorkers: workerApps[i].outputs.appName]
 
 @description('Dashboard URL — azd uses SERVICE_*_URI convention')
 output SERVICE_DASHBOARD_URI string = 'https://${containerApp.outputs.appFqdn}'

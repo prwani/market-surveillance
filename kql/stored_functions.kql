@@ -1,0 +1,228 @@
+// =============================================================================
+// KQL Stored Functions — Market Surveillance Detection Engine
+// =============================================================================
+// Fabric Eventhouse / KQL Database: surveillance
+//
+// Deploy with:
+//   scripts/deploy-stored-functions.sh <kql-uri> surveillance
+//
+// Functions:
+//   detect_spoofing()                      — cancel-rate + latency based
+//   detect_layering()                      — multi-level order stacking
+//   detect_wash_trading()                  — graph-based UBO resolution
+//   detect_anomalies()                     — series_decompose_anomalies
+//   detect_all()                           — union of all detectors
+//   resolve_ubo(broker_id: string)         — walk ownership chain
+//   get_regulations(exchange_id, alert_type) — regulatory lookup
+// =============================================================================
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// detect_spoofing()
+// ─────────────────────────────────────────────────────────────────────────────
+// Flags brokers with >80% cancel rate, <500ms cancel latency, >10k avg size
+// within a 1-minute window.
+// ─────────────────────────────────────────────────────────────────────────────
+.create-or-alter function detect_spoofing() {
+    ORDER_BOOK_EVENTS
+    | where event_time > ago(1m)
+    | where action in ("add", "cancel")
+    | summarize
+        orders_added = countif(action == "add"),
+        orders_cancelled = countif(action == "cancel"),
+        avg_size_added = avgif(quantity, action == "add"),
+        avg_cancel_latency_ms = avg(iff(action == "cancel",
+            datetime_diff("millisecond", event_time, prev(event_time, 1)), 0))
+        by broker_id, symbol, exchange_id, bin(event_time, 1m)
+    | where orders_added > 0
+    | where (orders_cancelled * 1.0 / orders_added) > 0.80
+    | where avg_cancel_latency_ms < 500
+    | where avg_size_added > 10000
+    | extend
+        cancel_rate = round(orders_cancelled * 1.0 / orders_added, 3),
+        spoofing_score = round((orders_cancelled * 1.0 / orders_added) * (500.0 - avg_cancel_latency_ms) / 500.0, 3),
+        alert_type = "SPOOFING",
+        severity = "CRITICAL"
+    | project event_time, exchange_id, broker_id, symbol, alert_type, severity,
+              spoofing_score, cancel_rate, orders_added, orders_cancelled,
+              avg_cancel_latency_ms, avg_size_added
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// detect_layering()
+// ─────────────────────────────────────────────────────────────────────────────
+// Flags brokers placing orders at ≥5 price levels on one side with ≥70%
+// cancel rate while placing orders on the opposite side.
+// ─────────────────────────────────────────────────────────────────────────────
+.create-or-alter function detect_layering() {
+    let layering_candidates =
+        ORDER_BOOK_EVENTS
+        | where event_time > ago(2m)
+        | summarize
+            price_levels = dcount(price),
+            orders_placed = countif(action == "add"),
+            orders_cancelled = countif(action == "cancel")
+            by broker_id, symbol, exchange_id, side, bin(event_time, 30s)
+        | where price_levels >= 5
+        | where orders_placed > 0
+        | extend cancel_fraction = round(orders_cancelled * 1.0 / orders_placed, 3)
+        | where cancel_fraction >= 0.70;
+    let opposite_side_orders =
+        ORDER_BOOK_EVENTS
+        | where event_time > ago(2m)
+        | where action == "add"
+        | summarize opposite_orders = count()
+            by broker_id, symbol, exchange_id,
+               opposite_side = side,
+               bin(event_time, 30s);
+    layering_candidates
+    | join kind=inner (opposite_side_orders) on broker_id, symbol, exchange_id, event_time
+    | where side != opposite_side
+    | where opposite_orders >= 1
+    | extend
+        alert_type = "LAYERING",
+        severity = "HIGH"
+    | project event_time, exchange_id, broker_id, symbol, alert_type, severity,
+              layering_side = side, price_levels, orders_placed, orders_cancelled,
+              cancel_fraction, opposite_side_orders = opposite_orders
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// detect_wash_trading()
+// ─────────────────────────────────────────────────────────────────────────────
+// Uses graph-based UBO resolution: walks ENTITIES/RELATIONSHIPS up to 3 hops
+// (broker → fund → holding → UBO) to find trades where buyer and seller share
+// the same ultimate beneficial owner.
+// ─────────────────────────────────────────────────────────────────────────────
+.create-or-alter function detect_wash_trading() {
+    let ubo_lookup =
+        RELATIONSHIPS
+        | where relationship_type == "beneficial_owner" or relationship_type == "parent_entity"
+        | project source_id, target_id, relationship_type;
+    let broker_to_ubo =
+        ubo_lookup
+        | where relationship_type == "parent_entity"
+        | join kind=inner (ubo_lookup | where relationship_type == "parent_entity") on $left.target_id == $right.source_id
+        | join kind=inner (ubo_lookup | where relationship_type == "beneficial_owner") on $left.target_id1 == $right.source_id
+        | project broker_id = source_id, ubo_id = target_id2;
+    TRADES
+    | where event_time > ago(10m)
+    | where buyer_id != seller_id
+    | join kind=inner (broker_to_ubo | project buyer_id = broker_id, buyer_ubo = ubo_id) on buyer_id
+    | join kind=inner (broker_to_ubo | project seller_id = broker_id, seller_ubo = ubo_id) on seller_id
+    | where buyer_ubo == seller_ubo
+    | summarize
+        wash_count = count(),
+        wash_volume = sum(quantity)
+        by symbol, exchange_id, ultimate_owner = buyer_ubo, bin(event_time, 10m)
+    | where wash_count >= 3
+    | extend alert_type = "WASH_TRADING", severity = "HIGH"
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// detect_anomalies()
+// ─────────────────────────────────────────────────────────────────────────────
+// Uses series_decompose_anomalies on 24h VWAP series to flag price deviations
+// exceeding 2.5 standard deviations.
+// ─────────────────────────────────────────────────────────────────────────────
+.create-or-alter function detect_anomalies() {
+    TRADES
+    | where event_time > ago(24h)
+    | make-series avg_price = avg(price) on event_time from ago(24h) to now() step 1m by symbol, exchange_id
+    | extend anomalies = series_decompose_anomalies(avg_price, 2.5)
+    | mv-expand event_time to typeof(datetime), avg_price to typeof(real), anomalies to typeof(real)
+    | where anomalies != 0
+    | extend alert_type = "PRICE_ANOMALY",
+             severity = iff(abs(anomalies) > 3.0, "CRITICAL", "HIGH"),
+             anomaly_score = round(abs(anomalies), 2)
+    | project event_time, exchange_id, symbol, alert_type, severity,
+              avg_price, anomaly_score
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// detect_all()
+// ─────────────────────────────────────────────────────────────────────────────
+// Master function: unions all detection outputs with a detection_source label.
+// ─────────────────────────────────────────────────────────────────────────────
+.create-or-alter function detect_all() {
+    union
+        (detect_spoofing() | extend detection_source = "spoofing"),
+        (detect_layering() | extend detection_source = "layering"),
+        (detect_wash_trading() | extend detection_source = "wash_trading"),
+        (detect_anomalies() | extend detection_source = "anomaly")
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// resolve_ubo(broker_id: string)
+// ─────────────────────────────────────────────────────────────────────────────
+// Walks the ownership chain from a broker_id up to 3 hops to find the UBO.
+// Returns each hop in the chain with entity details.
+// ─────────────────────────────────────────────────────────────────────────────
+.create-or-alter function resolve_ubo(broker_id: string) {
+    let hop1 =
+        RELATIONSHIPS
+        | where source_id == broker_id
+        | where relationship_type == "parent_entity"
+        | project hop = 1, source_id, target_id, relationship_type;
+    let hop2 =
+        hop1
+        | join kind=inner (
+            RELATIONSHIPS
+            | where relationship_type in ("parent_entity", "beneficial_owner")
+            | project source_id, target_id, relationship_type
+        ) on $left.target_id == $right.source_id
+        | project hop = 2, source_id = source_id1, target_id = target_id1, relationship_type = relationship_type1;
+    let hop3 =
+        hop2
+        | join kind=inner (
+            RELATIONSHIPS
+            | where relationship_type == "beneficial_owner"
+            | project source_id, target_id, relationship_type
+        ) on $left.target_id == $right.source_id
+        | project hop = 3, source_id = source_id1, target_id = target_id1, relationship_type = relationship_type1;
+    union hop1, hop2, hop3
+    | join kind=leftouter (ENTITIES | project entity_id, entity_type, display_name) on $left.target_id == $right.entity_id
+    | project hop, source_id, target_id, relationship_type, entity_type, display_name
+    | order by hop asc
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// get_regulations(exchange_id: string, alert_type: string)
+// ─────────────────────────────────────────────────────────────────────────────
+// Looks up the regulator and applicable regulations for a given exchange
+// and alert type using the ENTITIES and RELATIONSHIPS tables.
+// ─────────────────────────────────────────────────────────────────────────────
+.create-or-alter function get_regulations(exchange_id: string, alert_type: string) {
+    let exchange_entity =
+        ENTITIES
+        | where entity_id == exchange_id and entity_type == "exchange"
+        | project entity_id, exchange_name = display_name;
+    let regulator_links =
+        RELATIONSHIPS
+        | where target_id == exchange_id and relationship_type == "regulates"
+        | project regulator_id = source_id, exchange_id = target_id;
+    let regulators =
+        regulator_links
+        | join kind=inner (ENTITIES | where entity_type == "regulator") on $left.regulator_id == $right.entity_id
+        | project regulator_id, regulator_name = display_name, properties;
+    let regulations =
+        RELATIONSHIPS
+        | where relationship_type == "enforces"
+        | join kind=inner (
+            ENTITIES
+            | where entity_type == "regulation"
+            | where properties has alert_type or display_name has alert_type
+        ) on $left.target_id == $right.entity_id
+        | join kind=inner (regulator_links) on $left.source_id == $right.regulator_id
+        | project regulation_id = target_id, regulation_name = display_name, regulator_id = source_id, properties1;
+    regulators
+    | join kind=leftouter (regulations) on regulator_id
+    | project regulator_id, regulator_name, regulation_id, regulation_name,
+              exchange_id, alert_type = alert_type
+}

@@ -7,39 +7,46 @@ using Microsoft Fabric, AI agents, and KQL analytics.
 flowchart LR
     SIM[Exchange Simulator] -->|events| ES[Fabric Eventstreams]
     ES --> EH[Fabric Eventhouse\nKQL Database]
-    EH --> PA[Pattern Agent]
-    EH --> AA[Anomaly Agent]
-    EH --> CA[Cross-Market Agent]
-    PA --> IA[Intervention Agent]
-    AA --> IA
-    CA --> IA
-    IA --> EA[Evidence Agent]
-    EA --> DASH[FastAPI Dashboard]
-    EH --> DASH
+    EH -->|KQL stored functions| DET[Spoofing / Layering\nWash / Anomaly Detection]
+    DET --> DA[Data Activator\nReflex Triggers]
+    DA -->|autonomous intervention| EH
+    EH --> DASH[FastAPI Dashboard\nUI + Simulation Demos]
 ```
 
 ## Features
 
-- **5 AI detection agents** — Pattern, Anomaly, Cross-Market, Intervention, and Evidence Collection
+- **Fabric-native detection** — KQL stored functions for spoofing, layering, wash trading, and anomaly detection run directly in Eventhouse
+- **Data Activator triggers** — Reflex triggers for autonomous intervention (no worker containers needed)
+- **Ontology graph** in Eventhouse for UBO (Ultimate Beneficial Owner) resolution
 - **Exchange data simulator** with configurable manipulation injection (spoofing, layering, wash trading, price anomalies)
-- **KQL real-time detection queries** for spoofing, layering, wash trading, and anomaly detection
-- **FastAPI web dashboard** with live simulation, alert inspection, case management, and KQL explorer
+- **Python agent library** retained for local testing and simulation demos
+- **FastAPI web dashboard** — sole Container App for UI, simulation demos, alert inspection, and KQL explorer
 - **Automated Azure/Fabric deployment** via Bicep + shell scripts
-- **Fabric-native architecture** — Eventhouse for KQL and Eventstreams for ingestion (no standalone ADX or Event Hubs)
 
 ## Architecture
 
-The system uses a **Fabric-native** approach that eliminates ~$850/month in redundant services:
+Detection runs **natively in Fabric RTI** — no worker containers are needed:
+
+| Component | Purpose |
+|---|---|
+| **Fabric Eventhouse** | KQL database with stored functions for all detection logic |
+| **KQL Stored Functions** | Spoofing, layering, wash trading, and anomaly detection |
+| **Data Activator** | Reflex triggers for autonomous intervention |
+| **Fabric Eventstreams** | Event ingestion from exchanges / simulator |
+| **Dashboard Container App** | Sole Container App — UI and simulation demos |
+
+The system uses a **Fabric-native** approach that eliminates worker containers and ~$850/month in redundant services:
 
 | Component | Fabric-Native (this project) | Traditional Approach |
 |---|---|---|
+| Detection Logic | **KQL stored functions + Data Activator** (in Fabric capacity) | Worker containers polling Eventhouse |
 | KQL Database | **Fabric Eventhouse** (included in capacity) | Standalone Azure Data Explorer (~$600/mo) |
 | Event Ingestion | **Fabric Eventstreams** (included in capacity) | Standalone Event Hubs (~$250/mo) |
-| Compute | Container Apps + Fabric capacity | Container Apps + separate clusters |
+| Compute | **Single Container App** (dashboard only) | Multiple Container Apps (workers + dashboard) |
 | Primary Cost | **F8 Fabric capacity (~$1,049/mo)** | ADX + Event Hubs + Fabric (~$1,900/mo) |
 
-All KQL and streaming capabilities run inside the Microsoft Fabric capacity — no standalone
-Azure Data Explorer cluster or Event Hubs namespace is required.
+All detection, streaming, and analytics run inside the Microsoft Fabric capacity.
+The dashboard Container App provides the UI and simulation demo endpoints.
 
 ## Quick Start
 
@@ -91,7 +98,7 @@ Deploy the entire infrastructure to Azure with a single command:
 This provisions:
 1. Fabric F8 capacity with Eventhouse and KQL database
 2. Key Vault for secrets management
-3. Container App for the dashboard runtime
+3. Container App for the dashboard (sole Container App — no workers)
 4. Storage account for outputs and checkpoints
 5. Fabric workspace with Eventstreams for ingestion
 
@@ -100,31 +107,31 @@ See [docs/deployment-guide.md](docs/deployment-guide.md) for detailed instructio
 ### Scaling Beyond Demo
 
 For guidance on scaling from the demo (12 symbols) to production (1,000+ symbols),
-including ACA partitioning, AKS StatefulSet architecture, and cost estimates, see
+including Fabric capacity tiers (F8/F16/F32) and cost estimates, see
 [docs/scaling-guide.md](docs/scaling-guide.md).
 
 ## Project Structure
 
 ```
 market-surveillance/
-├── agents/                         # Detection and response agents
+├── agents/                         # Detection and response agents (used by dashboard for demos)
 │   ├── pattern_detection_agent.py  # Spoofing & layering detection
 │   ├── anomaly_detection_agent.py  # Price/volume anomaly detection
 │   ├── cross_market_agent.py       # Cross-exchange correlation
 │   ├── intervention_agent.py       # Automated intervention decisions
 │   ├── evidence_collection_agent.py# Evidence compilation & reporting
 │   └── base_agent.py               # Shared agent base class
-├── app/                            # FastAPI web dashboard
+├── app/                            # FastAPI web dashboard (sole Container App)
 │   ├── main.py                     # API routes and HTML pages
 │   └── templates.py                # HTML template functions
 ├── infra/                          # Bicep IaC templates
 │   ├── main.bicep                  # Main deployment template
 │   ├── modules/
 │   │   ├── fabric-capacity.bicep   # Fabric F8 capacity
-│   │   └── container-app.bicep     # Container Apps environment
+│   │   └── container-app.bicep     # Container Apps environment (dashboard only)
 │   └── parameters/
 │       └── dev.bicepparam          # Dev environment parameters
-├── kql/                            # KQL detection queries
+├── kql/                            # KQL detection queries (deployed as stored functions)
 │   ├── spoofing_detection.kql      # Order spoofing patterns
 │   ├── layering_detection.kql      # Layering detection
 │   ├── wash_trading_detection.kql  # Wash trading detection
@@ -201,9 +208,9 @@ The FastAPI dashboard provides a browser-based interface for the surveillance sy
 
 | Resource | Purpose |
 |---|---|
-| Microsoft Fabric Capacity (F8) | Eventhouse (KQL), Eventstreams, notebooks |
+| Microsoft Fabric Capacity (F8) | Eventhouse (KQL), Eventstreams, Data Activator, notebooks |
 | Key Vault | Secrets for KQL URI, storage connection strings |
-| Container Apps Environment | Hosts the FastAPI dashboard |
+| Container Apps Environment | Hosts the FastAPI dashboard (sole Container App) |
 | Storage Account | Surveillance output and checkpoint data |
 | Log Analytics Workspace | Centralized monitoring and diagnostics |
 
