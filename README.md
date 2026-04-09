@@ -21,7 +21,7 @@ flowchart LR
 - **Exchange data simulator** with configurable manipulation injection (spoofing, layering, wash trading, price anomalies)
 - **Python agent library** retained for local testing and simulation demos
 - **FastAPI web dashboard** — sole Container App for UI, simulation demos, alert inspection, and KQL explorer
-- **Automated Azure/Fabric deployment** via Bicep + shell scripts
+- **Automated Azure/Fabric deployment** via `azd up` (Bicep + postprovision hooks)
 
 ## Architecture
 
@@ -92,7 +92,7 @@ every page, alert types, severity levels, case lifecycle, and troubleshooting.
 Deploy the entire infrastructure to Azure with a single command:
 
 ```bash
-./deploy.sh dev
+azd up
 ```
 
 This provisions:
@@ -100,9 +100,10 @@ This provisions:
 2. Key Vault for secrets management
 3. Container App for the dashboard (sole Container App — no workers)
 4. Storage account for outputs and checkpoints
-5. Fabric workspace with Eventstreams for ingestion
+5. Fabric workspace with detection stored functions and ontology tables
 
-See [docs/deployment-guide.md](docs/deployment-guide.md) for detailed instructions.
+See [docs/deployment-guide.md](docs/deployment-guide.md) for detailed instructions
+and [docs/getting-started.md](docs/getting-started.md) for post-deployment verification.
 
 ### Scaling Beyond Demo
 
@@ -114,41 +115,52 @@ including Fabric capacity tiers (F8/F16/F32) and cost estimates, see
 
 ```
 market-surveillance/
-├── agents/                         # Detection and response agents (used by dashboard for demos)
-│   ├── pattern_detection_agent.py  # Spoofing & layering detection
-│   ├── anomaly_detection_agent.py  # Price/volume anomaly detection
-│   ├── cross_market_agent.py       # Cross-exchange correlation
-│   ├── intervention_agent.py       # Automated intervention decisions
-│   ├── evidence_collection_agent.py# Evidence compilation & reporting
-│   └── base_agent.py               # Shared agent base class
-├── app/                            # FastAPI web dashboard (sole Container App)
-│   ├── main.py                     # API routes and HTML pages
-│   └── templates.py                # HTML template functions
-├── infra/                          # Bicep IaC templates
-│   ├── main.bicep                  # Main deployment template
-│   ├── modules/
-│   │   ├── fabric-capacity.bicep   # Fabric F8 capacity
-│   │   └── container-app.bicep     # Container Apps environment (dashboard only)
-│   └── parameters/
-│       └── dev.bicepparam          # Dev environment parameters
-├── kql/                            # KQL detection queries (deployed as stored functions)
-│   ├── spoofing_detection.kql      # Order spoofing patterns
-│   ├── layering_detection.kql      # Layering detection
-│   ├── wash_trading_detection.kql  # Wash trading detection
-│   └── anomaly_detection.kql       # Price/volume anomalies
-├── scripts/                        # Deployment helper scripts
-│   ├── setup-fabric-workspace.sh   # Fabric workspace + Eventhouse setup
-│   ├── init-kql-tables.sh          # KQL table initialization
-│   ├── teardown.sh                 # Resource cleanup
-│   └── test_fabric_e2e.py          # End-to-end Fabric tests
-├── tests/                          # Unit tests
-│   ├── test_agents.py              # Agent unit tests
-│   └── test_simulator.py           # Simulator unit tests
-├── exchange_data_simulator.py      # Exchange data generator
-├── run_demo.py                     # Local end-to-end demo
-├── deploy.sh                       # One-command Azure deployment
-├── Dockerfile                      # Container image for dashboard
-└── requirements.txt                # Python dependencies
+├── src/
+│   ├── agents/                         # Detection and response agents (used by dashboard for demos)
+│   │   ├── pattern_detection_agent.py  # Spoofing & layering detection
+│   │   ├── anomaly_detection_agent.py  # Price/volume anomaly detection
+│   │   ├── cross_market_agent.py       # Cross-exchange correlation
+│   │   ├── intervention_agent.py       # Automated intervention decisions
+│   │   ├── evidence_collection_agent.py# Evidence compilation & reporting
+│   │   └── base_agent.py               # Shared agent base class
+│   ├── dashboard/                      # FastAPI web dashboard (sole Container App)
+│   │   ├── main.py                     # API routes and HTML pages
+│   │   └── templates.py                # HTML template functions
+│   ├── simulator/                      # Exchange data simulator
+│   └── shared/                         # Shared utilities
+├── infra/                              # Bicep IaC templates (used by azd)
+│   ├── main.bicep                      # Main deployment template
+│   └── modules/
+│       ├── fabric-capacity.bicep       # Fabric F8 capacity
+│       └── container-app.bicep         # Container Apps environment (dashboard only)
+├── kql/                                # KQL detection queries (deployed as stored functions)
+│   ├── spoofing_detection.kql          # Order spoofing patterns
+│   ├── layering_detection.kql          # Layering detection
+│   ├── wash_trading_detection.kql      # Wash trading detection
+│   └── anomaly_detection.kql           # Price/volume anomalies
+├── scripts/                            # Deployment helper scripts
+│   ├── setup-fabric-workspace.sh       # Fabric workspace + Eventhouse setup
+│   ├── deploy-stored-functions.sh      # KQL stored function deployment
+│   ├── setup-ontology.sh               # Ontology graph setup
+│   ├── postprovision.sh                # azd postprovision hook
+│   ├── init-kql-tables.sh              # KQL table initialization
+│   ├── teardown.sh                     # Resource cleanup
+│   └── test_fabric_e2e.py              # End-to-end Fabric tests
+├── ontology/                           # Ontology RDF definitions
+├── data_activator/                     # Data Activator trigger configs
+├── tests/                              # Unit tests
+│   ├── test_agents.py                  # Agent unit tests
+│   └── test_simulator.py               # Simulator unit tests
+├── docs/                               # Documentation
+│   ├── getting-started.md              # Post-deployment verification guide
+│   ├── deployment-guide.md             # azd deployment instructions
+│   ├── scaling-guide.md                # Fabric capacity scaling
+│   ├── dashboard-guide.md              # Dashboard user guide
+│   └── architecture-whitepaper.md      # Original design whitepaper
+├── azure.yaml                          # azd project definition
+├── run_demo.py                         # Local end-to-end demo
+├── Dockerfile                          # Container image for dashboard
+└── requirements.txt                    # Python dependencies
 ```
 
 ## Detection Agents
@@ -222,8 +234,8 @@ The FastAPI dashboard provides a browser-based interface for the surveillance sy
 | Eventhouse + KQL Database (`surveillance`) | Real-time KQL queries against streaming data |
 | Eventstreams | Ingestion pipeline from simulator to Eventhouse |
 
-The deployment is orchestrated by `deploy.sh`, which runs the Bicep deployment and then
-calls `scripts/setup-fabric-workspace.sh` to create the Fabric artifacts via the
+The deployment is orchestrated by `azd up`, which runs the Bicep deployment and then
+executes `scripts/postprovision.sh` to create the Fabric artifacts via the
 Fabric REST API. See [docs/deployment-guide.md](docs/deployment-guide.md) for full details.
 
 ## KQL Detection Queries

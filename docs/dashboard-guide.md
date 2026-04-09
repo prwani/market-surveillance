@@ -24,8 +24,8 @@ Open [http://localhost:8080](http://localhost:8080) in your browser.
 
 ### Azure Deployment
 
-After deploying with `./deploy.sh dev`, the dashboard is available at the URL
-printed by the deployment script. The URL follows this pattern:
+After deploying with `azd up`, the dashboard is available at the URL
+printed at the end of deployment. The URL follows this pattern:
 
 ```
 https://<app-name>.<environment-id>.<region>.azurecontainerapps.io

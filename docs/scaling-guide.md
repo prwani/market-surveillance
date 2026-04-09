@@ -2,24 +2,16 @@
 
 ## Overview
 
-Detection logic now runs **natively in Microsoft Fabric RTI** — no worker containers
-are needed. Scaling is handled by choosing the appropriate Fabric capacity tier.
-
-The surveillance pipeline uses:
-
-- **KQL stored functions** in Fabric Eventhouse for spoofing, layering, wash trading,
-  and anomaly detection
-- **Data Activator Reflex triggers** for autonomous intervention
-- **Ontology graph** in Eventhouse for UBO (Ultimate Beneficial Owner) resolution
+Detection logic runs **natively in Microsoft Fabric RTI** via KQL stored functions
+and Data Activator Reflex triggers. Scaling is controlled entirely by the Fabric
+capacity tier — upgrade the SKU to handle more symbols, higher event throughput,
+and lower detection latency.
 
 The only Container App is the **FastAPI dashboard** (UI + simulation demos).
 
 ---
 
 ## Fabric Capacity Tiers
-
-Scaling is controlled by the Fabric capacity SKU. Upgrade the SKU to handle more
-symbols, higher event throughput, and lower detection latency.
 
 | SKU | CU | Symbols | Events/sec | Detection Latency | Monthly Cost |
 |-----|-----|---------|-----------|-------------------|-------------|
@@ -35,10 +27,9 @@ symbols, higher event throughput, and lower detection latency.
 
 ### How to change capacity
 
-Update the `fabricSku` parameter in `infra/main.bicep` or pass it at deployment:
-
 ```bash
-azd provision --parameter fabricSku=F16
+azd env set FABRIC_SKU F16
+azd provision
 ```
 
 Or update `infra/main.parameters.json`:
@@ -51,24 +42,32 @@ Or update `infra/main.parameters.json`:
 
 ---
 
-## Detection Architecture
+## KQL Query Concurrency
 
-### KQL Stored Functions
+Fabric Eventhouse scales query concurrency with the capacity tier. Key factors:
 
-All detection logic runs as stored functions in the Fabric Eventhouse KQL database.
-These execute within the Fabric capacity — no external compute is needed.
+- **Concurrent queries** — higher SKUs support more simultaneous KQL queries.
+  F8 handles ~10 concurrent queries; F32 handles ~50+.
+- **Query complexity** — detection functions with large time windows or many
+  symbols consume more capacity units per query.
+- **Materialized views** — for high-frequency detection, create materialized
+  views over raw tables to reduce per-query compute. Example:
 
-| Function | Detection Type | Query Pattern |
-|----------|---------------|--------------|
-| `fn_detect_spoofing` | Order spoofing | Order placement/cancellation ratio within sliding windows |
-| `fn_detect_layering` | Layering | Multiple orders at different price levels creating false depth |
-| `fn_detect_wash_trading` | Wash trading | Same-entity trades on both sides of the order book |
-| `fn_detect_anomaly` | Price/volume anomalies | Statistical deviation from rolling averages |
-| `fn_detect_cross_market` | Cross-exchange correlation | Synchronized anomalies across SGX, HKEX, NSE |
+```kusto
+.create materialized-view SpoofingCandidates on table ORDER_BOOK_EVENTS {
+    ORDER_BOOK_EVENTS
+    | where action in ("add", "cancel")
+    | summarize added=countif(action=="add"), cancelled=countif(action=="cancel")
+        by broker_id, symbol, bin(event_time, 5s)
+    | where added > 0 and cancelled*1.0/added > 0.80
+}
+```
 
-### Data Activator Reflex Triggers
+---
 
-Data Activator monitors the KQL function outputs and fires Reflex triggers when
+## Data Activator Trigger Scaling
+
+Data Activator Reflex triggers monitor KQL function outputs and fire when
 detection thresholds are breached:
 
 | Trigger | Condition | Action |
@@ -78,7 +77,73 @@ detection thresholds are breached:
 | Wash trading alert | Same-broker trades > 3 in 1 min | Log alert + escalate |
 | Price anomaly | Deviation > 3σ from rolling VWAP | Log alert + notify risk team |
 
-Triggers run autonomously — no polling, no worker containers, no cold-start delays.
+Triggers run autonomously with no polling or cold-start delays. Scaling
+considerations:
+
+- **Trigger evaluation frequency** — Data Activator evaluates conditions on a
+  cadence tied to the Fabric capacity. Higher SKUs evaluate more frequently.
+- **Trigger fan-out** — each trigger can fire multiple actions (Teams notification,
+  Power Automate flow, trade halt). Fan-out does not consume additional CUs.
+- **Trigger count** — there is no hard limit on the number of Reflex triggers;
+  create separate triggers per detection type and exchange for isolation.
+
+---
+
+## Eventhouse Performance Tuning
+
+### Hot Cache vs. Cold Storage
+
+Configure the hot cache window to keep frequently queried data in memory:
+
+```kusto
+.alter database surveillance policy caching hot = 7d
+```
+
+- **7-day hot cache** (default) — keeps the last week of events in fast SSD/memory.
+- **30-day hot cache** — for production with historical lookback requirements.
+  Requires a higher SKU to fit more data in cache.
+- **Cold data** — older data moves to cheaper storage but remains queryable
+  (with higher latency).
+
+### Table Partitioning
+
+Partition large tables by time to improve query performance:
+
+```kusto
+.alter table ORDER_BOOK_EVENTS policy partitioning
+```json
+{
+  "PartitionKeys": [
+    {
+      "ColumnName": "event_time",
+      "Kind": "UniformRange",
+      "Properties": {
+        "Reference": "2024-01-01T00:00:00",
+        "RangeSize": "1.00:00:00",
+        "OverrideCreationTime": false
+      }
+    }
+  ]
+}
+```
+
+### Ingestion Batching
+
+Eventstreams batches events before writing to Eventhouse. Tune the batching
+policy for throughput vs. latency:
+
+```kusto
+.alter table TRADES policy ingestionbatching
+```json
+{
+  "MaximumBatchingTimeSpan": "00:00:30",
+  "MaximumNumberOfItems": 10000,
+  "MaximumRawDataSizeMB": 100
+}
+```
+
+- For **low-latency detection** (F16+): reduce `MaximumBatchingTimeSpan` to 10 s.
+- For **cost-optimized dev** (F2/F4): keep the default 30 s batch window.
 
 ---
 
@@ -90,21 +155,8 @@ The FastAPI dashboard is the **sole Container App**. It serves:
 - Simulation demos (uses the Python agent library locally)
 - KQL explorer for ad-hoc queries
 
-The dashboard is lightweight and does not run detection logic. It scales via
-standard ACA autoscaling if needed (unlikely — it handles UI traffic only).
-
----
-
-## Python Agent Library
-
-The Python agent library (`src/agents/`) is retained for:
-
-- **Local testing** — run `python run_demo.py` to simulate the full pipeline locally
-- **Simulation demos** — the dashboard uses agents in-process for interactive demos
-- **Unit tests** — `tests/test_agents.py` validates agent logic
-
-The agent library is **not deployed as workers**. Detection in production runs
-via KQL stored functions and Data Activator.
+The dashboard does not run detection logic and handles only UI traffic.
+Standard Container Apps autoscaling applies if needed.
 
 ---
 
@@ -114,8 +166,7 @@ via KQL stored functions and Data Activator.
 |-----------|---------|-------------|
 | Fabric Capacity (F8) | Eventhouse, KQL functions, Data Activator, Eventstreams | ~$1,049/mo |
 | Dashboard Container App | UI and simulation demos | ~$15/mo |
-| Key Vault | Secrets management | ~$1/mo |
-| Storage Account | Outputs and checkpoints | ~$5/mo |
+| ACR, Key Vault, Storage | Image registry, secrets, outputs | ~$5/mo |
 | Log Analytics | Dashboard monitoring | ~$10/mo |
 | **Total (F8 dev)** | | **~$1,080/mo** |
 
@@ -123,23 +174,18 @@ For production, upgrade to F16 (~$2,098/mo) or F32 (~$4,196/mo) based on symbol
 count and latency requirements. The dashboard cost stays the same regardless of
 Fabric capacity tier.
 
-### Comparison with previous worker-based architecture
+**Pause capacity when not in use** to reduce costs to ~$20/mo (dashboard + storage only):
 
-| | Workers + Fabric (old) | Fabric-native (current) |
-|--|---|---|
-| Detection compute | ACA worker containers | KQL stored functions in Fabric |
-| Scaling mechanism | Deploy more Container Apps | Upgrade Fabric SKU |
-| Operational overhead | Manage worker containers, cold starts, partitioning | None — Fabric handles it |
-| Monthly cost (dev) | ~$1,124 (Fabric + 4 workers) | ~$1,080 (Fabric + dashboard only) |
-| Monthly cost (prod) | ~$1,670+ (Fabric + AKS cluster) | ~$2,108 (F16 + dashboard) |
-| Detection latency | 5–10 s (polling interval) | Near real-time (Data Activator) |
+```bash
+az fabric capacity suspend --capacity-name mktsurveilfabricdev --resource-group rg-dev
+```
 
 ---
 
 ## Summary
 
-- **No worker containers** — detection runs in Fabric RTI natively
-- **Scale by upgrading Fabric SKU** — F8 for dev, F16/F32 for production
+- **Scale by upgrading Fabric SKU** — F2 for dev, F8 for demo, F16/F32 for production
+- **KQL concurrency** scales with capacity tier; use materialized views for hot paths
+- **Data Activator triggers** scale automatically within the Fabric capacity
+- **Eventhouse tuning** — adjust hot cache, partitioning, and ingestion batching
 - **Dashboard is the sole Container App** — UI and simulation demos only
-- **Data Activator** provides autonomous, near-real-time intervention
-- **Python agent library** retained for local testing and demos
