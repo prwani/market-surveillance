@@ -35,6 +35,12 @@ run_kql "ML_SCORES" ".create-merge table ML_SCORES (event_id: string, scored_at:
 # ── INTERVENTIONS table ──────────────────────────────────
 run_kql "INTERVENTIONS" ".create-merge table INTERVENTIONS (case_id: string, detected_at: datetime, halted_at: datetime, exchange_id: string, symbol: string, manipulation_type: string, involved_brokers: dynamic, status: string, regulator_ref: string)"
 
+# ── ENTITIES table (ontology graph) ───────────────────────
+run_kql "ENTITIES" ".create-merge table ENTITIES (entity_id: string, entity_type: string, display_name: string, properties: dynamic, created_at: datetime)"
+
+# ── RELATIONSHIPS table (ontology graph) ──────────────────
+run_kql "RELATIONSHIPS" ".create-merge table RELATIONSHIPS (source_id: string, target_id: string, relationship_type: string, properties: dynamic, created_at: datetime)"
+
 # ── Ingestion mappings for Event Hub JSON ─────────────────
 echo "  Creating ingestion mappings..."
 run_kql "TRADES_MAPPING" ".create-or-alter table TRADES ingestion json mapping 'trades_json_mapping' '[{\"column\":\"trade_id\",\"path\":\"$.trade_id\"},{\"column\":\"event_time\",\"path\":\"$.event_time\"},{\"column\":\"exchange_id\",\"path\":\"$.exchange_id\"},{\"column\":\"symbol\",\"path\":\"$.symbol\"},{\"column\":\"price\",\"path\":\"$.price\"},{\"column\":\"quantity\",\"path\":\"$.quantity\"},{\"column\":\"buyer_id\",\"path\":\"$.buyer_id\"},{\"column\":\"seller_id\",\"path\":\"$.seller_id\"},{\"column\":\"order_type\",\"path\":\"$.order_type\"},{\"column\":\"venue\",\"path\":\"$.venue\"}]'"

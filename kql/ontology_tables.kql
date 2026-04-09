@@ -1,0 +1,43 @@
+// =============================================================================
+// Ontology Graph Tables — KQL Table Definitions
+// =============================================================================
+// Fabric Eventhouse / KQL Database: surveillance
+//
+// Tables:
+//   ENTITIES       — nodes in the ownership/regulatory graph
+//   RELATIONSHIPS  — edges connecting entities
+//
+// Entity types: broker, fund, holding, person, exchange, instrument,
+//               regulator, regulation
+//
+// Relationship types: parent_entity, beneficial_owner, listed_on,
+//                     regulates, enforces
+// =============================================================================
+
+
+// ─── Table definitions ───────────────────────────────────────────────────────
+
+.create-merge table ENTITIES (
+    entity_id: string,
+    entity_type: string,
+    display_name: string,
+    properties: dynamic,
+    created_at: datetime
+)
+
+.create-merge table RELATIONSHIPS (
+    source_id: string,
+    target_id: string,
+    relationship_type: string,
+    properties: dynamic,
+    created_at: datetime
+)
+
+
+// ─── Ingestion mappings ──────────────────────────────────────────────────────
+
+.create-or-alter table ENTITIES ingestion json mapping 'entities_json_mapping'
+    '[{"column":"entity_id","path":"$.entity_id"},{"column":"entity_type","path":"$.entity_type"},{"column":"display_name","path":"$.display_name"},{"column":"properties","path":"$.properties"},{"column":"created_at","path":"$.created_at"}]'
+
+.create-or-alter table RELATIONSHIPS ingestion json mapping 'relationships_json_mapping'
+    '[{"column":"source_id","path":"$.source_id"},{"column":"target_id","path":"$.target_id"},{"column":"relationship_type","path":"$.relationship_type"},{"column":"properties","path":"$.properties"},{"column":"created_at","path":"$.created_at"}]'
