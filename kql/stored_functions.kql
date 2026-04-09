@@ -209,7 +209,8 @@
         (detect_spoofing() | extend detection_source = "spoofing"),
         (detect_layering() | extend detection_source = "layering"),
         (detect_wash_trading() | extend detection_source = "wash_trading"),
-        (detect_anomalies() | extend detection_source = "anomaly")
+        (detect_anomalies() | extend detection_source = "anomaly_basic"),
+        (detect_anomalies_advanced() | extend detection_source = "anomaly_advanced")
 }
 
 
