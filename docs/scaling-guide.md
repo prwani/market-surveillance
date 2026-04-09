@@ -177,7 +177,7 @@ Fabric capacity tier.
 **Pause capacity when not in use** to reduce costs to ~$20/mo (dashboard + storage only):
 
 ```bash
-az fabric capacity suspend --capacity-name mktsurveilfabricdev --resource-group rg-dev
+az fabric capacity suspend --capacity-name mktsurveilfabric<env> --resource-group rg-<env>
 ```
 
 ---

@@ -1,12 +1,18 @@
 # Getting Started — Verifying Your Deployment
 
+> **Resource naming:** This guide uses `<env>` as a placeholder for your
+> environment name (e.g., `dev`, `staging`, `prod`). Replace it with the
+> name you used in `azd env new <env>`. For example, if you ran
+> `azd env new staging`, your resource group is `rg-staging` and your
+> Fabric capacity is `mktsurveilfabricstaging`.
+
 After running `azd up`, follow these steps to verify each component is working.
 
 ## 1. Open the Dashboard
 
 Your dashboard URL was shown at the end of `azd up`:
 ```
-Endpoint: https://mktsurveil-agent-dev.xxxxxx.southeastasia.azurecontainerapps.io/
+Endpoint: <your-dashboard-url>
 ```
 
 Open it in your browser. You should see the Market Surveillance home page with navigation to Simulate, Alerts, Cases, and KQL.
@@ -77,7 +83,7 @@ detect_anomalies()
 ## 6. Verify Fabric Artifacts (Azure Portal)
 
 1. Go to [Fabric Portal](https://app.fabric.microsoft.com)
-2. Open workspace: `mktsurveil-surveillance-dev`
+2. Open workspace: `mktsurveil-surveillance-<env>`
 3. Verify:
    - ✅ Eventhouse: `surveillance-eh`
    - ✅ KQL Database: `surveillance`
@@ -89,7 +95,7 @@ detect_anomalies()
 The ontology was automatically imported during `azd up`. To explore it:
 
 1. Open [Microsoft Fabric](https://app.fabric.microsoft.com)
-2. Navigate to workspace: `mktsurveil-surveillance-dev`
+2. Navigate to workspace: `mktsurveil-surveillance-<env>`
 3. Click on **Market Surveillance** ontology item
 4. You'll see the entity graph: Brokers → Funds → Holdings → Beneficial Owners
 
@@ -204,5 +210,5 @@ Trade Halt / Regulator Alert / Teams Notification
 |---------|----------|
 | Dashboard shows 0 alerts | Run a simulation first (Simulate page) |
 | KQL page says "not configured" | `KQL_URI` env var not set — re-run `azd provision` |
-| Fabric capacity paused | Resume: `az fabric capacity resume --capacity-name mktsurveilfabricdev --resource-group rg-dev` |
-| `azd up` fails at Key Vault | Purge soft-deleted KV: `az keyvault purge --name mktsurveil-kv-dev` then retry |
+| Fabric capacity paused | Resume: `az fabric capacity resume --capacity-name mktsurveilfabric<env> --resource-group rg-<env>` |
+| `azd up` fails at Key Vault | Purge soft-deleted KV: `az keyvault purge --name mktsurveil-kv-<env>` then retry |

@@ -110,7 +110,7 @@ Eventhouse table, enabling natural language queries over real data.
 ### Via Fabric Portal
 
 1. Open [Microsoft Fabric](https://app.fabric.microsoft.com)
-2. Navigate to your workspace: `mktsurveil-surveillance-dev`
+2. Navigate to your workspace: `mktsurveil-surveillance-<env>`
 3. Go to **Settings** → **Ontology** (or **IQ** → **Ontology**)
 4. Click **Import ontology**
 5. Upload `ontology/market-surveillance.rdf`

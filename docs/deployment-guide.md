@@ -53,7 +53,7 @@ See [Getting Started Guide](getting-started.md) for verification steps.
 ## Pause Fabric Capacity (save costs when not in use)
 
 ```bash
-az fabric capacity suspend --capacity-name mktsurveilfabricdev --resource-group rg-dev
+az fabric capacity suspend --capacity-name mktsurveilfabric<env> --resource-group rg-<env>
 ```
 
 ## Tear Down
@@ -92,9 +92,9 @@ az provider show --namespace Microsoft.Fabric --query "registrationState"
 **Fix:** Ensure your account has Fabric admin rights and the capacity is active:
 ```bash
 az resource show \
-  --resource-group rg-dev \
+  --resource-group rg-<env> \
   --resource-type "Microsoft.Fabric/capacities" \
-  --name "mktsurveilfabricdev" \
+  --name "mktsurveilfabric<env>" \
   --query "properties.state"
 ```
 The capacity must be in `Active` state. If paused, resume it in the Azure portal.
@@ -114,7 +114,7 @@ azd provision
 
 **Fix:** Purge the soft-deleted vault and retry:
 ```bash
-az keyvault purge --name mktsurveil-kv-dev
+az keyvault purge --name mktsurveil-kv-<env>
 azd up
 ```
 
@@ -125,8 +125,8 @@ azd up
 **Fix:** Check the Container App logs:
 ```bash
 az containerapp logs show \
-  --name mktsurveil-ca-dev \
-  --resource-group rg-dev \
+  --name mktsurveil-ca-<env> \
+  --resource-group rg-<env> \
   --follow
 ```
 
