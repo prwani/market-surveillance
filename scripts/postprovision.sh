@@ -80,6 +80,13 @@ if [[ -n "${WORKSPACE_ID}" && -f "${SCRIPT_DIR}/deploy-activator.sh" ]]; then
   bash "${SCRIPT_DIR}/deploy-activator.sh" "${WORKSPACE_ID}"
 fi
 
+# 8. Enable Python plugin on Eventhouse (required for anomaly detection models)
+echo "Enabling Python plugin on Eventhouse..."
+# Note: Python plugin enablement currently requires Fabric portal UI.
+# Automated enablement via REST API is not yet available.
+echo "  ⚠ Python plugin must be enabled manually in Fabric portal"
+echo "    (Eventhouse → Plugins → Python 3.11.7 DL)"
+
 echo "═══════════════════════════════════════════════════════"
-echo " Post-provision complete (7 steps)"
+echo " Post-provision complete (8 steps)"
 echo "═══════════════════════════════════════════════════════"

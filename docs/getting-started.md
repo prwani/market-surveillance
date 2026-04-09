@@ -147,6 +147,28 @@ Data Activator was automatically configured during `azd up`. To verify:
 > Trigger activation requires data flowing through Eventhouse — run a
 > simulation from the dashboard first to populate the tables.
 
+## 9. Explore Fabric RTI Features (Optional)
+
+Two preview features enhance the detection pipeline:
+
+### Anomaly Detection Models
+1. In the Fabric workspace, navigate to Eventhouse → `surveillance-eh`
+2. Enable **Python plugin** (Plugins → Python 3.11.7 DL)
+3. Select `TRADES` table → **Create Anomaly Detector**
+4. Configure: Value=`price`, Group by=`symbol`, Timestamp=`event_time`
+5. Run analysis → review recommended models
+6. Publish to Real-Time Hub for continuous monitoring
+
+### Operations Agent (Advisory)
+1. In workspace, **Create** → **Operations Agent**
+2. Name: `Surveillance Advisor`
+3. Paste the business goals and instructions from [the guide](fabric-rti-features.md#recommended-configuration)
+4. Connect to `surveillance` KQL database
+5. The agent will start monitoring and sending Teams recommendations every 5 minutes
+
+> **Note:** Both features are in preview and require manual portal setup.
+> They complement (not replace) the automated KQL + Data Activator pipeline.
+
 ## Architecture Overview
 
 ```

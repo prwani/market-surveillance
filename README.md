@@ -48,6 +48,19 @@ The system uses a **Fabric-native** approach that eliminates worker containers a
 All detection, streaming, and analytics run inside the Microsoft Fabric capacity.
 The dashboard Container App provides the UI and simulation demo endpoints.
 
+### Fabric RTI Native Features
+
+The solution leverages Fabric RTI preview features for enhanced detection:
+
+- **[Anomaly Detection Models](docs/fabric-rti-features.md#1-anomaly-detection-models)** — 
+  12 built-in ML models (Signal Watcher, Change Spike Detector, etc.) for
+  sophisticated price/volume anomaly detection beyond basic Z-scores
+- **[Operations Agent](docs/fabric-rti-features.md#2-operations-agent-advisory-layer)** — 
+  AI-powered advisory agent that monitors data, provides contextual analysis,
+  and recommends actions via Teams (secondary to deterministic Data Activator alerts)
+
+See [Fabric RTI Features Guide](docs/fabric-rti-features.md) for setup instructions.
+
 ## Quick Start
 
 ### Prerequisites

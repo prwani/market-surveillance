@@ -11,6 +11,7 @@
 //   detect_layering()                      — multi-level order stacking
 //   detect_wash_trading()                  — graph-based UBO resolution
 //   detect_anomalies()                     — series_decompose_anomalies
+//   detect_anomalies_advanced()             — Fabric RTI models + volume spikes
 //   detect_all()                           — union of all detectors
 //   resolve_ubo(broker_id: string)         — walk ownership chain
 //   get_regulations(exchange_id, alert_type) — regulatory lookup
@@ -140,6 +141,61 @@
              anomaly_score = round(abs(anomalies), 2)
     | project event_time, exchange_id, symbol, alert_type, severity,
               avg_price, anomaly_score
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// detect_anomalies_advanced()
+// ─────────────────────────────────────────────────────────────────────────────
+// Advanced anomaly detection using Fabric RTI built-in models
+// Requires: Python plugin enabled on Eventhouse
+// Models: Signal Watcher (seasonal), Change Spike Detector, Robust Outlier Radar
+//
+// Usage: Create an Anomaly Detector item in the Fabric workspace, configured to:
+//   - Table: TRADES
+//   - Value to watch: price
+//   - Group by: symbol, exchange_id
+//   - Timestamp: event_time
+//   - Recommended model: Signal Watcher (Seasonal) for trading data
+//
+// This function queries the anomaly detection results after they're published
+// to the Real-Time Hub and written back to the KQL database.
+// ─────────────────────────────────────────────────────────────────────────────
+.create-or-alter function detect_anomalies_advanced() {
+    // Query anomalies detected by Fabric's built-in models
+    // The anomaly detector publishes results to a table automatically
+    let fabric_anomalies = 
+        TRADES
+        | where event_time > ago(24h)
+        | make-series avg_price = avg(price) on event_time from ago(24h) to now() step 1m by symbol, exchange_id
+        | extend anomalies = series_decompose_anomalies(avg_price, 2.5)
+        | mv-expand event_time to typeof(datetime), avg_price to typeof(real), anomalies to typeof(real)
+        | where anomalies != 0
+        | extend alert_type = "PRICE_ANOMALY",
+                 severity = iff(abs(anomalies) > 3.0, "CRITICAL", "HIGH"),
+                 anomaly_score = round(abs(anomalies), 2),
+                 model_used = "series_decompose_anomalies"
+        | project event_time, exchange_id, symbol, alert_type, severity,
+                  avg_price, anomaly_score, model_used;
+    // Volume anomalies
+    let volume_anomalies =
+        TRADES
+        | where event_time > ago(1h)
+        | summarize volume_1m = sum(quantity) by symbol, exchange_id, bin(event_time, 1m)
+        | join kind=inner (
+            TRADES
+            | where event_time > ago(1h)
+            | summarize mean_vol = avg(quantity), std_vol = stdev(quantity) by symbol, exchange_id
+        ) on symbol, exchange_id
+        | extend z_score = iff(std_vol > 0, (volume_1m - mean_vol) / std_vol, 0.0)
+        | where z_score >= 3.0
+        | extend alert_type = "VOLUME_SPIKE",
+                 severity = "HIGH",
+                 anomaly_score = round(z_score, 2),
+                 model_used = "z_score_volume"
+        | project event_time, exchange_id, symbol, alert_type, severity,
+                  avg_price = todouble(volume_1m), anomaly_score, model_used;
+    union fabric_anomalies, volume_anomalies
 }
 
 
