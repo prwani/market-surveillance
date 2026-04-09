@@ -173,6 +173,7 @@
     "4. Set environment variable values (KQL_URI, webhook URLs) in the Reflex secrets store.",
     "5. Enable each trigger and verify sub-second detection in the Reflex monitoring view.",
     "6. The webhook action calls the Intervention Agent API which opens an InterventionCase and notifies the regulator.",
-    "7. The Teams notification provides a human-readable alert to the surveillance desk."
+    "7. The Teams notification provides a human-readable alert to the surveillance desk.",
+    "8. For detailed step-by-step portal instructions, see docs/data-activator-setup.md."
   ]
 }

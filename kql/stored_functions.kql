@@ -226,3 +226,25 @@
     | project regulator_id, regulator_name, regulation_id, regulation_name,
               exchange_id, alert_type = alert_type
 }
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CASE_REPORTS table
+// ─────────────────────────────────────────────────────────────────────────────
+// Stores AI-generated evidence reports for intervention cases.
+// Written by notebooks/evidence_report.py using Fabric built-in OpenAI.
+// ─────────────────────────────────────────────────────────────────────────────
+.create-merge table CASE_REPORTS (
+    report_id: string,
+    case_id: string,
+    exchange_id: string,
+    symbol: string,
+    manipulation_type: string,
+    regulatory_body: string,
+    narrative: string,
+    related_trades: int,
+    related_orders: int,
+    price_impact_pct: real,
+    generated_at: datetime,
+    model_used: string
+)

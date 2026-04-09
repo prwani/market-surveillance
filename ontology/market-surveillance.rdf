@@ -1,0 +1,526 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF
+    xml:base="http://example.org/ontology/market-surveillance/"
+    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+    xmlns:owl="http://www.w3.org/2002/07/owl#"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema#"
+    xmlns:ont="http://example.org/ontology/market-surveillance/">
+
+  <!-- ===================================================================== -->
+  <!-- Ontology Declaration                                                   -->
+  <!-- ===================================================================== -->
+  <owl:Ontology rdf:about="http://example.org/ontology/market-surveillance/">
+    <rdfs:label>Market Surveillance Ontology</rdfs:label>
+    <rdfs:comment>Real-time market manipulation detection across Asian exchanges with beneficial ownership resolution</rdfs:comment>
+    <owl:versionInfo>1.0.0</owl:versionInfo>
+  </owl:Ontology>
+
+
+  <!-- ===================================================================== -->
+  <!-- Classes (owl:Class)                                                    -->
+  <!-- ===================================================================== -->
+
+  <owl:Class rdf:about="http://example.org/ontology/market-surveillance/Broker">
+    <rdfs:label>Broker</rdfs:label>
+    <rdfs:comment>Trading firm registered with an exchange</rdfs:comment>
+    <ont:icon>🏛️</ont:icon>
+    <ont:color>#0078D4</ont:color>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://example.org/ontology/market-surveillance/Fund">
+    <rdfs:label>Fund</rdfs:label>
+    <rdfs:comment>Investment fund entity</rdfs:comment>
+    <ont:icon>💼</ont:icon>
+    <ont:color>#107C10</ont:color>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://example.org/ontology/market-surveillance/HoldingCompany">
+    <rdfs:label>Holding Company</rdfs:label>
+    <rdfs:comment>Parent holding company</rdfs:comment>
+    <ont:icon>🏢</ont:icon>
+    <ont:color>#5C2D91</ont:color>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://example.org/ontology/market-surveillance/BeneficialOwner">
+    <rdfs:label>Beneficial Owner</rdfs:label>
+    <rdfs:comment>Ultimate beneficial owner (person)</rdfs:comment>
+    <ont:icon>👤</ont:icon>
+    <ont:color>#D13438</ont:color>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://example.org/ontology/market-surveillance/Exchange">
+    <rdfs:label>Exchange</rdfs:label>
+    <rdfs:comment>Securities exchange marketplace</rdfs:comment>
+    <ont:icon>🏦</ont:icon>
+    <ont:color>#FFB900</ont:color>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://example.org/ontology/market-surveillance/Instrument">
+    <rdfs:label>Instrument</rdfs:label>
+    <rdfs:comment>Tradable security or derivative</rdfs:comment>
+    <ont:icon>📈</ont:icon>
+    <ont:color>#00B7C3</ont:color>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://example.org/ontology/market-surveillance/Regulator">
+    <rdfs:label>Regulator</rdfs:label>
+    <rdfs:comment>Financial regulatory authority</rdfs:comment>
+    <ont:icon>⚖️</ont:icon>
+    <ont:color>#E3008C</ont:color>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://example.org/ontology/market-surveillance/Regulation">
+    <rdfs:label>Regulation</rdfs:label>
+    <rdfs:comment>Regulatory rule or statute</rdfs:comment>
+    <ont:icon>📋</ont:icon>
+    <ont:color>#8764B8</ont:color>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://example.org/ontology/market-surveillance/Trade">
+    <rdfs:label>Trade</rdfs:label>
+    <rdfs:comment>Executed trade transaction</rdfs:comment>
+    <ont:icon>💳</ont:icon>
+    <ont:color>#FF8C00</ont:color>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://example.org/ontology/market-surveillance/Alert">
+    <rdfs:label>Alert</rdfs:label>
+    <rdfs:comment>Surveillance alert</rdfs:comment>
+    <ont:icon>🚨</ont:icon>
+    <ont:color>#D13438</ont:color>
+  </owl:Class>
+
+  <owl:Class rdf:about="http://example.org/ontology/market-surveillance/InterventionCase">
+    <rdfs:label>Intervention Case</rdfs:label>
+    <rdfs:comment>Regulatory intervention case</rdfs:comment>
+    <ont:icon>📁</ont:icon>
+    <ont:color>#881798</ont:color>
+  </owl:Class>
+
+
+  <!-- ===================================================================== -->
+  <!-- Data Properties (owl:DatatypeProperty)                                 -->
+  <!-- ===================================================================== -->
+
+  <!-- Broker properties -->
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/brokerId">
+    <rdfs:label>broker ID</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Broker"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <ont:isIdentifier rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean">true</ont:isIdentifier>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/brokerName">
+    <rdfs:label>name</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Broker"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/jurisdiction">
+    <rdfs:label>jurisdiction</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Broker"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <!-- Fund properties -->
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/fundId">
+    <rdfs:label>fund ID</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Fund"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <ont:isIdentifier rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean">true</ont:isIdentifier>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/fundName">
+    <rdfs:label>name</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Fund"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <!-- HoldingCompany properties -->
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/holdingId">
+    <rdfs:label>holding ID</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/HoldingCompany"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <ont:isIdentifier rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean">true</ont:isIdentifier>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/holdingName">
+    <rdfs:label>name</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/HoldingCompany"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/incorporation">
+    <rdfs:label>incorporation</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/HoldingCompany"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <!-- BeneficialOwner properties -->
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/personId">
+    <rdfs:label>person ID</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/BeneficialOwner"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <ont:isIdentifier rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean">true</ont:isIdentifier>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/personName">
+    <rdfs:label>name</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/BeneficialOwner"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/isPEP">
+    <rdfs:label>is PEP</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/BeneficialOwner"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#boolean"/>
+  </owl:DatatypeProperty>
+
+  <!-- Exchange properties -->
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/exchangeId">
+    <rdfs:label>exchange ID</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Exchange"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <ont:isIdentifier rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean">true</ont:isIdentifier>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/exchangeName">
+    <rdfs:label>name</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Exchange"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/exchangeCountry">
+    <rdfs:label>country</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Exchange"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/currency">
+    <rdfs:label>currency</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Exchange"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <!-- Instrument properties -->
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/ticker">
+    <rdfs:label>ticker</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Instrument"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <ont:isIdentifier rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean">true</ont:isIdentifier>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/isin">
+    <rdfs:label>ISIN</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Instrument"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/sector">
+    <rdfs:label>sector</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Instrument"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/basePrice">
+    <rdfs:label>base price</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Instrument"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#decimal"/>
+  </owl:DatatypeProperty>
+
+  <!-- Regulator properties -->
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/regulatorId">
+    <rdfs:label>regulator ID</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Regulator"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <ont:isIdentifier rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean">true</ont:isIdentifier>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/regulatorName">
+    <rdfs:label>name</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Regulator"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/regulatorCountry">
+    <rdfs:label>country</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Regulator"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <!-- Regulation properties -->
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/regulationId">
+    <rdfs:label>regulation ID</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Regulation"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <ont:isIdentifier rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean">true</ont:isIdentifier>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/regulationName">
+    <rdfs:label>name</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Regulation"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/covers">
+    <rdfs:label>covers</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Regulation"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <!-- Trade properties -->
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/tradeId">
+    <rdfs:label>trade ID</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Trade"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <ont:isIdentifier rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean">true</ont:isIdentifier>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/price">
+    <rdfs:label>price</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Trade"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#decimal"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/quantity">
+    <rdfs:label>quantity</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Trade"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#integer"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/timestamp">
+    <rdfs:label>timestamp</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Trade"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#dateTime"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/orderType">
+    <rdfs:label>order type</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Trade"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <!-- Alert properties -->
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/alertId">
+    <rdfs:label>alert ID</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Alert"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <ont:isIdentifier rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean">true</ont:isIdentifier>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/alertType">
+    <rdfs:label>alert type</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Alert"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/severity">
+    <rdfs:label>severity</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Alert"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/confidence">
+    <rdfs:label>confidence</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Alert"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#decimal"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/detectedAt">
+    <rdfs:label>detected at</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Alert"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#dateTime"/>
+  </owl:DatatypeProperty>
+
+  <!-- InterventionCase properties -->
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/caseId">
+    <rdfs:label>case ID</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/InterventionCase"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <ont:isIdentifier rdf:datatype="http://www.w3.org/2001/XMLSchema#boolean">true</ont:isIdentifier>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/status">
+    <rdfs:label>status</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/InterventionCase"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+
+  <owl:DatatypeProperty rdf:about="http://example.org/ontology/market-surveillance/createdAt">
+    <rdfs:label>created at</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/InterventionCase"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#dateTime"/>
+  </owl:DatatypeProperty>
+
+
+  <!-- ===================================================================== -->
+  <!-- Object Properties (owl:ObjectProperty) with cardinalities              -->
+  <!-- ===================================================================== -->
+
+  <!-- ownedBy: Broker → Fund (many:1) -->
+  <owl:ObjectProperty rdf:about="http://example.org/ontology/market-surveillance/ownedBy">
+    <rdfs:label>owned by</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Broker"/>
+    <rdfs:range rdf:resource="http://example.org/ontology/market-surveillance/Fund"/>
+  </owl:ObjectProperty>
+  <owl:Class rdf:about="http://example.org/ontology/market-surveillance/Broker">
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty rdf:resource="http://example.org/ontology/market-surveillance/ownedBy"/>
+        <owl:maxCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">1</owl:maxCardinality>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+
+  <!-- managedBy: Fund → HoldingCompany (many:1) -->
+  <owl:ObjectProperty rdf:about="http://example.org/ontology/market-surveillance/managedBy">
+    <rdfs:label>managed by</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Fund"/>
+    <rdfs:range rdf:resource="http://example.org/ontology/market-surveillance/HoldingCompany"/>
+  </owl:ObjectProperty>
+  <owl:Class rdf:about="http://example.org/ontology/market-surveillance/Fund">
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty rdf:resource="http://example.org/ontology/market-surveillance/managedBy"/>
+        <owl:maxCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">1</owl:maxCardinality>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+
+  <!-- controlledBy: HoldingCompany → BeneficialOwner (many:1) -->
+  <owl:ObjectProperty rdf:about="http://example.org/ontology/market-surveillance/controlledBy">
+    <rdfs:label>controlled by</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/HoldingCompany"/>
+    <rdfs:range rdf:resource="http://example.org/ontology/market-surveillance/BeneficialOwner"/>
+  </owl:ObjectProperty>
+  <owl:Class rdf:about="http://example.org/ontology/market-surveillance/HoldingCompany">
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty rdf:resource="http://example.org/ontology/market-surveillance/controlledBy"/>
+        <owl:maxCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">1</owl:maxCardinality>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+
+  <!-- listedOn: Instrument → Exchange (many:many) -->
+  <owl:ObjectProperty rdf:about="http://example.org/ontology/market-surveillance/listedOn">
+    <rdfs:label>listed on</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Instrument"/>
+    <rdfs:range rdf:resource="http://example.org/ontology/market-surveillance/Exchange"/>
+  </owl:ObjectProperty>
+
+  <!-- regulatedBy: Exchange → Regulator (many:1) -->
+  <owl:ObjectProperty rdf:about="http://example.org/ontology/market-surveillance/regulatedBy">
+    <rdfs:label>regulated by</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Exchange"/>
+    <rdfs:range rdf:resource="http://example.org/ontology/market-surveillance/Regulator"/>
+  </owl:ObjectProperty>
+  <owl:Class rdf:about="http://example.org/ontology/market-surveillance/Exchange">
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty rdf:resource="http://example.org/ontology/market-surveillance/regulatedBy"/>
+        <owl:maxCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">1</owl:maxCardinality>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+
+  <!-- enforces: Regulator → Regulation (1:many) -->
+  <owl:ObjectProperty rdf:about="http://example.org/ontology/market-surveillance/enforces">
+    <rdfs:label>enforces</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Regulator"/>
+    <rdfs:range rdf:resource="http://example.org/ontology/market-surveillance/Regulation"/>
+  </owl:ObjectProperty>
+
+  <!-- executedBy: Trade → Broker (many:1) -->
+  <owl:ObjectProperty rdf:about="http://example.org/ontology/market-surveillance/executedBy">
+    <rdfs:label>executed by</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Trade"/>
+    <rdfs:range rdf:resource="http://example.org/ontology/market-surveillance/Broker"/>
+  </owl:ObjectProperty>
+  <owl:Class rdf:about="http://example.org/ontology/market-surveillance/Trade">
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty rdf:resource="http://example.org/ontology/market-surveillance/executedBy"/>
+        <owl:maxCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">1</owl:maxCardinality>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+
+  <!-- tradedInstrument: Trade → Instrument (many:1) -->
+  <owl:ObjectProperty rdf:about="http://example.org/ontology/market-surveillance/tradedInstrument">
+    <rdfs:label>traded instrument</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Trade"/>
+    <rdfs:range rdf:resource="http://example.org/ontology/market-surveillance/Instrument"/>
+  </owl:ObjectProperty>
+  <owl:Class rdf:about="http://example.org/ontology/market-surveillance/Trade">
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty rdf:resource="http://example.org/ontology/market-surveillance/tradedInstrument"/>
+        <owl:maxCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">1</owl:maxCardinality>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+
+  <!-- onExchange: Trade → Exchange (many:1) -->
+  <owl:ObjectProperty rdf:about="http://example.org/ontology/market-surveillance/onExchange">
+    <rdfs:label>on exchange</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Trade"/>
+    <rdfs:range rdf:resource="http://example.org/ontology/market-surveillance/Exchange"/>
+  </owl:ObjectProperty>
+  <owl:Class rdf:about="http://example.org/ontology/market-surveillance/Trade">
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty rdf:resource="http://example.org/ontology/market-surveillance/onExchange"/>
+        <owl:maxCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">1</owl:maxCardinality>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+
+  <!-- triggeredBy: Alert → Trade (many:many) -->
+  <owl:ObjectProperty rdf:about="http://example.org/ontology/market-surveillance/triggeredBy">
+    <rdfs:label>triggered by</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Alert"/>
+    <rdfs:range rdf:resource="http://example.org/ontology/market-surveillance/Trade"/>
+  </owl:ObjectProperty>
+
+  <!-- detectedOn: Alert → Instrument (many:1) -->
+  <owl:ObjectProperty rdf:about="http://example.org/ontology/market-surveillance/detectedOn">
+    <rdfs:label>detected on</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Alert"/>
+    <rdfs:range rdf:resource="http://example.org/ontology/market-surveillance/Instrument"/>
+  </owl:ObjectProperty>
+  <owl:Class rdf:about="http://example.org/ontology/market-surveillance/Alert">
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty rdf:resource="http://example.org/ontology/market-surveillance/detectedOn"/>
+        <owl:maxCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">1</owl:maxCardinality>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+
+  <!-- resultsIn: Alert → InterventionCase (many:1) -->
+  <owl:ObjectProperty rdf:about="http://example.org/ontology/market-surveillance/resultsIn">
+    <rdfs:label>results in</rdfs:label>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Alert"/>
+    <rdfs:range rdf:resource="http://example.org/ontology/market-surveillance/InterventionCase"/>
+  </owl:ObjectProperty>
+  <owl:Class rdf:about="http://example.org/ontology/market-surveillance/Alert">
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty rdf:resource="http://example.org/ontology/market-surveillance/resultsIn"/>
+        <owl:maxCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#nonNegativeInteger">1</owl:maxCardinality>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+
+  <!-- linkedTo: Broker → Broker (many:many, self-referencing) -->
+  <owl:ObjectProperty rdf:about="http://example.org/ontology/market-surveillance/linkedTo">
+    <rdfs:label>linked to</rdfs:label>
+    <rdfs:comment>Self-referencing: brokers sharing the same compliance officer</rdfs:comment>
+    <rdfs:domain rdf:resource="http://example.org/ontology/market-surveillance/Broker"/>
+    <rdfs:range rdf:resource="http://example.org/ontology/market-surveillance/Broker"/>
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#SymmetricProperty"/>
+  </owl:ObjectProperty>
+
+</rdf:RDF>

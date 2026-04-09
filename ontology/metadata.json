@@ -1,0 +1,7 @@
+{
+  "name": "Market Surveillance",
+  "description": "Real-time market manipulation detection across Asian exchanges with beneficial ownership resolution",
+  "domain": "Finance",
+  "version": "1.0.0",
+  "tags": ["surveillance", "manipulation", "spoofing", "wash-trading", "AML", "KYC"]
+}
