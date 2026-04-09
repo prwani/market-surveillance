@@ -301,15 +301,19 @@ class EventstreamConsumer:
         The Eventstream schema matches the ``exchange_data_simulator.py``
         output, so the same normalization as Eventhouse rows is applied.
         The ``event_type`` field distinguishes TRADE from ORDER_BOOK events.
+
+        When the payload already contains ``event_type`` and agent-friendly
+        fields (i.e. simulator output forwarded directly), it is returned as-is.
+        If the payload uses the Eventhouse KQL column names (``trade_id``,
+        ``event_id``, ``event_time``) it is normalised via ``normalize_trade``
+        or ``normalize_order``.
         """
         event_type = data.get("event_type", "")
         if event_type == "TRADE":
+            # Re-normalise if the payload uses KQL column names
             return normalize_trade(data) if "trade_id" in data else data
         elif event_type == "ORDER_BOOK":
             return normalize_order(data) if "event_id" in data else data
-        # Already normalised (simulator output)
-        elif event_type in ("TRADE", "ORDER_BOOK"):
-            return data
         return None
 
 
