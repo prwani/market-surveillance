@@ -4,24 +4,62 @@ Real-time market manipulation detection across Asian exchanges (SGX, HKEX, NSE)
 using Microsoft Fabric, AI agents, and KQL analytics.
 
 ```mermaid
-flowchart LR
-    SIM[Exchange Simulator] -->|events| ES[Fabric Eventstreams]
-    ES --> EH[Fabric Eventhouse\nKQL Database]
-    EH -->|KQL stored functions| DET[Spoofing / Layering\nWash / Anomaly Detection]
-    DET --> DA[Data Activator\nReflex Triggers]
-    DA -->|autonomous intervention| EH
-    EH --> DASH[FastAPI Dashboard\nUI + Simulation Demos]
+flowchart TD
+    SIM["🔄 Exchange Simulator\n(SGX / HKEX / NSE)"] -->|trade + order events| ES["📡 Fabric Eventstreams"]
+    ES --> EH["🗄️ Fabric Eventhouse\n(KQL Database)"]
+
+    subgraph Detection["⚡ Detection Layer (Fabric RTI)"]
+        KQL["KQL Stored Functions\n• detect_spoofing()\n• detect_layering()\n• detect_wash_trading()\n• detect_anomalies()"]
+        ADM["🤖 Anomaly Detection Models\n(Signal Watcher / Change Spike\n/ 12 built-in ML models)"]
+    end
+
+    EH --> KQL
+    EH --> ADM
+
+    subgraph Ontology["🔗 Ontology Graph"]
+        ENT["ENTITIES + RELATIONSHIPS\n(Broker → Fund → Holding → UBO)"]
+        RDF["FabricIQ Ontology (RDF)\n+ Natural Language Queries"]
+    end
+
+    EH --> ENT
+    KQL -->|"resolve_ubo()\nget_regulations()"| ENT
+    ENT --> RDF
+
+    subgraph Actions["🎯 Response Layer"]
+        DA["⚡ Data Activator\nReflex Triggers\n(< 60s, deterministic)"]
+        OA["🧠 Operations Agent\nAI Advisory\n(~5min, contextual)"]
+        NB["📝 Evidence Notebook\n(GPT-4.1 narrative)"]
+    end
+
+    KQL --> DA
+    ADM --> DA
+    KQL --> OA
+    DA -->|"trade halt\nregulator alert\nbroker suspend"| EX["🏦 Exchanges\n(SGX / HKEX / NSE)"]
+    OA -->|"Teams recommendations"| TEAMS["💬 Microsoft Teams"]
+    DA --> NB
+    NB -->|"regulatory report"| EH
+
+    DASH["🖥️ FastAPI Dashboard\n(Container App)"] --> EH
+    DASH --> RDF
+
+    style Detection fill:#fef3c7,stroke:#d97706
+    style Ontology fill:#ede9fe,stroke:#7c3aed
+    style Actions fill:#fce7f3,stroke:#be185d
 ```
 
 ## Features
 
 - **Fabric-native detection** — KQL stored functions for spoofing, layering, wash trading, and anomaly detection run directly in Eventhouse
-- **Data Activator triggers** — Reflex triggers for autonomous intervention (no worker containers needed)
-- **Ontology graph** in Eventhouse for UBO (Ultimate Beneficial Owner) resolution
+- **Dual anomaly detection** — both KQL `series_decompose_anomalies` and Fabric RTI built-in ML models (Signal Watcher, Change Spike Detector, etc.)
+- **Data Activator triggers** — Reflex triggers for autonomous intervention under 60 seconds (deterministic, no worker containers)
+- **Operations Agent** — AI advisory layer that monitors data and sends contextual recommendations via Teams (~5 min cycle)
+- **Ontology graph** in Eventhouse — UBO resolution via 3-hop graph traversal (`resolve_ubo()`), regulatory lookup (`get_regulations()`)
+- **FabricIQ ontology (RDF/OWL)** — importable into FabricIQ for natural language queries ("Which brokers share a UBO?")
+- **Evidence notebook** — Fabric Notebook using built-in GPT-4.1 for regulatory narrative generation (no API key needed)
 - **Exchange data simulator** with configurable manipulation injection (spoofing, layering, wash trading, price anomalies)
 - **Python agent library** retained for local testing and simulation demos
 - **FastAPI web dashboard** — sole Container App for UI, simulation demos, alert inspection, and KQL explorer
-- **Automated Azure/Fabric deployment** via `azd up` (Bicep + postprovision hooks)
+- **Automated deployment** — `azd up` provisions everything (Fabric capacity, Eventhouse, ontology, Data Activator, dashboard)
 
 ## Architecture
 
