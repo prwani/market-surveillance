@@ -9,9 +9,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy shared libraries
 COPY src/agents/ /app/agents/
 COPY src/simulator/ /app/simulator/
+COPY src/simulator/exchange_data_simulator.py /app/exchange_data_simulator.py
 
 # Copy worker
 COPY src/worker/worker.py /app/
 
-EXPOSE 8080
 CMD ["python", "worker.py"]

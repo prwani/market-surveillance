@@ -7,8 +7,7 @@ targetScope = 'resourceGroup'
 @description('Azure region for all resources')
 param location string = 'southeastasia'
 
-@description('Environment name (dev, staging, prod)')
-@allowed(['dev', 'staging', 'prod'])
+@description('Environment name')
 param environmentName string
 
 @description('Project name used as prefix for all resources')
@@ -150,6 +149,8 @@ module containerApp 'modules/container-app.bicep' = {
     logAnalyticsSharedKey: logAnalytics.listKeys().primarySharedKey
     keyVaultName: keyVault.name
     acrLoginServer: acr.properties.loginServer
+    acrUsername: acr.listCredentials().username
+    acrPassword: acr.listCredentials().passwords[0].value
   }
 }
 
@@ -178,7 +179,8 @@ module workerApps 'modules/worker-app.bicep' = [for exchange in exchangeWorkers:
     tags: tags
     containerAppEnvId: containerApp.outputs.environmentId
     acrLoginServer: acr.properties.loginServer
-    kqlUri: '' // Set post-deployment once Fabric workspace is created
+    acrUsername: acr.listCredentials().username
+    acrPassword: acr.listCredentials().passwords[0].value
     exchangeFilter: exchange
   }
 }]

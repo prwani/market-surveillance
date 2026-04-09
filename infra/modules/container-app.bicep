@@ -24,8 +24,16 @@ param keyVaultName string
 @description('ACR login server (e.g. myacr.azurecr.io)')
 param acrLoginServer string
 
-@description('Fabric Eventhouse KQL URI')
-param kqlUri string = ''
+@description('ACR admin username')
+@secure()
+param acrUsername string
+
+@description('ACR admin password')
+@secure()
+param acrPassword string
+
+@description('Dashboard container image (set by azd deploy)')
+param dashboardImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
 var envName = '${projectName}-cae-${environmentName}'
 var appName = '${projectName}-agent-${environmentName}'
@@ -48,7 +56,7 @@ resource containerAppEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
 resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: appName
   location: location
-  tags: tags
+  tags: union(tags, { 'azd-service-name': 'dashboard' })
   identity: {
     type: 'SystemAssigned'
   }
@@ -60,12 +68,25 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         targetPort: 8080
         transport: 'http'
       }
+      registries: [
+        {
+          server: acrLoginServer
+          username: acrUsername
+          passwordSecretRef: 'acr-password'
+        }
+      ]
+      secrets: [
+        {
+          name: 'acr-password'
+          value: acrPassword
+        }
+      ]
     }
     template: {
       containers: [
         {
           name: 'surveillance-dashboard'
-          image: '${acrLoginServer}/market-surveillance:latest'
+          image: dashboardImage
           resources: {
             cpu: json('0.5')
             memory: '1Gi'
@@ -74,10 +95,6 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'ENVIRONMENT'
               value: environmentName
-            }
-            {
-              name: 'KQL_URI'
-              value: kqlUri
             }
             {
               name: 'KQL_DB'

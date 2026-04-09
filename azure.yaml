@@ -4,18 +4,11 @@ metadata:
   template: market-surveillance@1.0.0
 services:
   dashboard:
-    project: ./src/dashboard
+    project: .
     host: containerapp
     language: py
     docker:
       path: ./src/dashboard/Dockerfile
-      context: .
-  worker:
-    project: ./src/worker
-    host: containerapp
-    language: py
-    docker:
-      path: ./src/worker/Dockerfile
       context: .
 hooks:
   postprovision:

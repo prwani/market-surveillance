@@ -9,6 +9,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy shared libraries
 COPY src/agents/ /app/agents/
 COPY src/simulator/ /app/simulator/
+# Also copy simulator module to app root so "from exchange_data_simulator import ..." works
+COPY src/simulator/exchange_data_simulator.py /app/exchange_data_simulator.py
 
 # Copy dashboard app
 COPY src/dashboard/app/ /app/app/

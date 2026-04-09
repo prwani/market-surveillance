@@ -16,8 +16,18 @@ PROJECT=$(azd env get-value PROJECT_NAME 2>/dev/null || echo "mktsurveil")
 ENV_NAME=$(azd env get-value AZURE_ENV_NAME 2>/dev/null || echo "dev")
 
 # 1. Set up Fabric workspace + Eventhouse
-if [[ -f "${SCRIPT_DIR}/setup-fabric-workspace.sh" && -n "${FABRIC_CAPACITY_ID}" ]]; then
-  bash "${SCRIPT_DIR}/setup-fabric-workspace.sh" "${FABRIC_CAPACITY_ID}" "${PROJECT}" "${ENV_NAME}"
+# The Fabric API needs the capacity GUID, not the ARM resource ID.
+# Retrieve it from the Fabric capacities list.
+FABRIC_TOKEN=$(az account get-access-token --resource "https://api.fabric.microsoft.com" --query accessToken -o tsv)
+CAPACITY_GUID=$(curl -s "https://api.fabric.microsoft.com/v1/capacities" \
+  -H "Authorization: Bearer ${FABRIC_TOKEN}" | \
+  jq -r '.value[] | select(.displayName == "mktsurveilfabricdev") | .id' 2>/dev/null || echo "")
+
+if [[ -n "${CAPACITY_GUID}" && -f "${SCRIPT_DIR}/setup-fabric-workspace.sh" ]]; then
+  # Pass the GUID, not the ARM ID
+  bash "${SCRIPT_DIR}/setup-fabric-workspace.sh" "${CAPACITY_GUID}" "${PROJECT}" "${ENV_NAME}"
+else
+  echo "  ⚠ Fabric capacity GUID not found — skipping workspace setup"
 fi
 
 # 2. Discover KQL URI

@@ -19,8 +19,16 @@ param containerAppEnvId string
 @description('ACR login server')
 param acrLoginServer string
 
-@description('Fabric Eventhouse KQL URI')
-param kqlUri string
+@description('ACR admin username')
+@secure()
+param acrUsername string
+
+@description('ACR admin password')
+@secure()
+param acrPassword string
+
+@description('Worker container image (set by azd deploy)')
+param workerImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
 @description('KQL database name')
 param kqlDb string = 'surveillance'
@@ -47,22 +55,30 @@ resource workerApp 'Microsoft.App/containerApps@2024-03-01' = {
   properties: {
     managedEnvironmentId: containerAppEnvId
     configuration: {
-      // No ingress — worker is not a web server
+      registries: [
+        {
+          server: acrLoginServer
+          username: acrUsername
+          passwordSecretRef: 'acr-password'
+        }
+      ]
+      secrets: [
+        {
+          name: 'acr-password'
+          value: acrPassword
+        }
+      ]
     }
     template: {
       containers: [
         {
           name: 'surveillance-worker'
-          image: '${acrLoginServer}/market-surveillance-worker:latest'
+          image: workerImage
           resources: {
             cpu: json('0.5')
             memory: '1Gi'
           }
           env: [
-            {
-              name: 'KQL_URI'
-              value: kqlUri
-            }
             {
               name: 'KQL_DB'
               value: kqlDb
