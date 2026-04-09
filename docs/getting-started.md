@@ -84,13 +84,58 @@ detect_anomalies()
    - ✅ Tables: TRADES, ORDER_BOOK_EVENTS, ENTITIES, RELATIONSHIPS
    - ✅ Stored Functions: detect_spoofing, detect_layering, etc.
 
-## 7. Import the Ontology (Optional)
+## 7. Import the Ontology and Use FabricIQ NL Queries
 
-To enable FabricIQ natural language queries:
-1. In the Fabric workspace, go to **Settings → Ontology**
-2. Import `ontology/market-surveillance.rdf` from the repo
-3. Map entity types to Eventhouse tables
-4. Try natural language: "Which brokers share a beneficial owner?"
+The ontology enables **natural language queries** in the Fabric portal —
+ask questions in plain English instead of writing KQL.
+
+### Import the Ontology
+
+1. Open [Microsoft Fabric](https://app.fabric.microsoft.com)
+2. Navigate to workspace: `mktsurveil-surveillance-dev`
+3. Go to **Settings** → **Ontology** (or **IQ** → **Ontology**)
+4. Click **Import ontology** → upload `ontology/market-surveillance.rdf`
+5. Map entity types to Eventhouse tables (see
+   [Ontology Playground Guide](ontology-playground-guide.md#step-5-import-into-fabriciq-schema--data-mapping)
+   for the full mapping table)
+6. Save the mapping
+
+### Ask Natural Language Questions
+
+After importing, open **Copilot for Fabric** (or the IQ query bar) in the
+Fabric portal and try these sample questions:
+
+**Beneficial Ownership & Entity Resolution:**
+- "Who is the ultimate beneficial owner of BROKER_SGX_001?"
+- "Which brokers share a beneficial owner?"
+- "Show me the ownership chain for Alpha Fund Singapore"
+- "List all brokers under the same holding company as BROKER_HKEX_001"
+
+**Trade Surveillance:**
+- "Show me all trades on SGX for OCBC in the last hour"
+- "Which brokers have the highest trade volume today?"
+- "Find trades where the buyer and seller are under the same holding company"
+- "What is the average trade price for DBS on SGX?"
+
+**Manipulation Detection:**
+- "Which brokers have a cancel rate above 80%?"
+- "Find brokers who placed orders at 5 or more price levels then cancelled them"
+- "Are there any wash trades between related accounts?"
+- "Show me price anomalies across all exchanges"
+
+**Regulatory:**
+- "Which regulations apply to spoofing on SGX?"
+- "What is the regulatory body for HKEX?"
+- "List all regulations enforced by MAS"
+
+> **Note:** FabricIQ translates these natural language questions into KQL
+> queries using the ontology as a guide. The ontology tells FabricIQ that
+> "beneficial owner" means traversing the `parent_entity → beneficial_owner`
+> relationship chain in the RELATIONSHIPS table — the user doesn't need to
+> know KQL or the table structure.
+
+For a detailed guide on ontology design and the schema-to-data relationship,
+see [Ontology Playground Guide](ontology-playground-guide.md).
 
 ## 8. Set Up Data Activator (Optional)
 
