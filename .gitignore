@@ -40,4 +40,6 @@ output/
 .env
 *.tfstate
 *.tfstate.backup
-infra/*.json
+
+# Azure Developer CLI
+.azure/

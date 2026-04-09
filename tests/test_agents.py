@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List
 from unittest.mock import MagicMock
 
-_PKG_ROOT = os.path.join(os.path.dirname(__file__), "..")
+_PKG_ROOT = os.path.join(os.path.dirname(__file__), "..", "src")
 if _PKG_ROOT not in sys.path:
     sys.path.insert(0, _PKG_ROOT)
 

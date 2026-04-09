@@ -13,11 +13,13 @@ import unittest
 from dataclasses import asdict
 from datetime import datetime, timezone
 
-# Ensure the market-surveillance package root is on the path regardless of
+# Ensure the src/ directory is on the path regardless of
 # how pytest is invoked (from the repo root or from the tests/ directory).
-_PKG_ROOT = os.path.join(os.path.dirname(__file__), "..")
-if _PKG_ROOT not in sys.path:
-    sys.path.insert(0, _PKG_ROOT)
+_PKG_ROOT = os.path.join(os.path.dirname(__file__), "..", "src")
+_SIM_ROOT = os.path.join(_PKG_ROOT, "simulator")
+for _p in (_PKG_ROOT, _SIM_ROOT):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from exchange_data_simulator import (
     ExchangeId,

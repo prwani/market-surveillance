@@ -9,8 +9,14 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-# Allow imports from repo root
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Allow imports from src/ for local development;
+# inside Docker, agents/ and simulator/ are at /app/ level.
+_app_dir = os.path.dirname(os.path.abspath(__file__))
+_src_dir = os.path.dirname(os.path.dirname(_app_dir))
+_sim_dir = os.path.join(_src_dir, "simulator")
+for _p in (_src_dir, _sim_dir):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from exchange_data_simulator import SimulationEngine, TradeEvent, OrderBookEvent  # noqa: E402
 from agents import (  # noqa: E402

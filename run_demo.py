@@ -11,8 +11,16 @@ Usage:
 """
 
 import dataclasses
+import os
 import random
 import sys
+
+# Add src/ to path for local development
+_src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
+_sim = os.path.join(_src, "simulator")
+for _p in (_src, _sim):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from exchange_data_simulator import SimulationEngine
 from agents import (

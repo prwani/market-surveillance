@@ -21,10 +21,13 @@ import random
 import sys
 import time
 
-# Ensure repo root is importable
+# Ensure src/ is importable
 _REPO_ROOT = os.path.join(os.path.dirname(__file__), "..")
-if _REPO_ROOT not in sys.path:
-    sys.path.insert(0, _REPO_ROOT)
+_SRC_ROOT = os.path.join(_REPO_ROOT, "src")
+_SIM_ROOT = os.path.join(_SRC_ROOT, "simulator")
+for _p in (_SRC_ROOT, _SIM_ROOT):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from exchange_data_simulator import SimulationEngine, TradeEvent, OrderBookEvent
 

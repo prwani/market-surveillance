@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: market-surveillance
+metadata:
+  template: market-surveillance@1.0.0
+services:
+  dashboard:
+    project: ./src/dashboard
+    host: containerapp
+    language: py
+    docker:
+      path: ./src/dashboard/Dockerfile
+      context: .
+  worker:
+    project: ./src/worker
+    host: containerapp
+    language: py
+    docker:
+      path: ./src/worker/Dockerfile
+      context: .
+hooks:
+  postprovision:
+    shell: sh
+    run: scripts/postprovision.sh
+    interactive: true
+    continueOnError: false

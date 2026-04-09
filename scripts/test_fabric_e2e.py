@@ -19,10 +19,13 @@ import random
 import sys
 import time
 
-# Ensure the repo root is on the path
+# Ensure the src/ directory is on the path
 _REPO_ROOT = os.path.join(os.path.dirname(__file__), "..")
-if _REPO_ROOT not in sys.path:
-    sys.path.insert(0, _REPO_ROOT)
+_SRC_ROOT = os.path.join(_REPO_ROOT, "src")
+_SIM_ROOT = os.path.join(_SRC_ROOT, "simulator")
+for _p in (_SRC_ROOT, _SIM_ROOT):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from exchange_data_simulator import SimulationEngine
 from agents import (

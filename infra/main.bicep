@@ -184,19 +184,22 @@ module workerApps 'modules/worker-app.bicep' = [for exchange in exchangeWorkers:
 }]
 
 // ──────────────────────────────────────────────
-// Outputs
+// Outputs — azd reads these as environment values
 // ──────────────────────────────────────────────
 @description('Fabric capacity name')
 output fabricCapacityName string = fabricCapacity.outputs.capacityName
 
-@description('Fabric capacity ID')
-output fabricCapacityId string = fabricCapacity.outputs.capacityId
+@description('Fabric capacity ID — used by postprovision hook')
+output FABRIC_CAPACITY_ID string = fabricCapacity.outputs.capacityId
 
 @description('Fabric capacity SKU')
 output fabricCapacitySku string = fabricCapacity.outputs.capacitySku
 
 @description('Key Vault name')
-output keyVaultName string = keyVault.name
+output KEY_VAULT_NAME string = keyVault.name
+
+@description('Project name — used by postprovision hook')
+output PROJECT_NAME string = projectName
 
 @description('Container App Environment name')
 output containerAppEnvironment string = containerApp.outputs.environmentName
@@ -207,10 +210,16 @@ output containerAppName string = containerApp.outputs.appName
 @description('Worker App names (per-exchange)')
 output workerAppNames array = [for (exchange, i) in exchangeWorkers: workerApps[i].outputs.appName]
 
-@description('Dashboard URL')
+@description('Dashboard URL — azd uses SERVICE_*_URI convention')
+output SERVICE_DASHBOARD_URI string = 'https://${containerApp.outputs.appFqdn}'
+
+@description('Dashboard URL (legacy alias)')
 output dashboardUrl string = 'https://${containerApp.outputs.appFqdn}'
 
 @description('Container Registry login server')
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = acr.properties.loginServer
+
+@description('Container Registry login server (legacy alias)')
 output acrLoginServer string = acr.properties.loginServer
 
 @description('Storage Account name')

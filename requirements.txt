@@ -1,26 +1,8 @@
-# Core dependencies for exchange_data_simulator.py and agents/
-# (No external dependencies required for basic CSV/JSON/stdout output
-#  or for running the detection agents)
-
-# Optional: for Kafka output
-# confluent-kafka>=2.3.0
-
-# Optional: for FabricIQ notebook integration examples
-# pyspark>=3.5.0
-# azure-identity>=1.15.0
-# azure-ai-projects>=1.0.0b1
-
-# Optional: for GenAI integration examples (EvidenceCollectionAgent)
-# openai>=1.12.0
-
-# Optional: for ML model examples
-# momentfm>=0.1.4
-# nixtla>=0.5.0
-# torch>=2.2.0
-# transformers>=4.38.0
-
-# Web dashboard
+# Root requirements.txt — for local development and testing
 fastapi>=0.110.0
 uvicorn>=0.27.0
 azure-identity>=1.15.0
 azure-kusto-data>=4.3.0
+azure-eventhub>=5.11.0
+playwright>=1.40.0
+pytest>=8.0.0

@@ -1,0 +1,11 @@
+{
+  "abbreviations": {
+    "Microsoft.App/containerApps": "ca",
+    "Microsoft.App/managedEnvironments": "cae",
+    "Microsoft.ContainerRegistry/registries": "acr",
+    "Microsoft.Fabric/capacities": "fabric",
+    "Microsoft.KeyVault/vaults": "kv",
+    "Microsoft.OperationalInsights/workspaces": "law",
+    "Microsoft.Storage/storageAccounts": "st"
+  }
+}

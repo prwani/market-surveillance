@@ -74,10 +74,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# Ensure repo root is on path
+# Ensure src/ is on path for local development;
+# inside Docker, agents/ is at /app/ level.
 _ROOT = os.path.dirname(os.path.abspath(__file__))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
+_SRC = os.path.dirname(_ROOT)
+for _p in (_ROOT, _SRC):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from agents import (
     Alert,
