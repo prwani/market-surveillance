@@ -84,25 +84,18 @@ detect_anomalies()
    - ✅ Tables: TRADES, ORDER_BOOK_EVENTS, ENTITIES, RELATIONSHIPS
    - ✅ Stored Functions: detect_spoofing, detect_layering, etc.
 
-## 7. Import the Ontology and Use FabricIQ NL Queries
+## 7. Explore the Ontology in FabricIQ
 
-The ontology enables **natural language queries** in the Fabric portal —
-ask questions in plain English instead of writing KQL.
-
-### Import the Ontology
+The ontology was automatically imported during `azd up`. To explore it:
 
 1. Open [Microsoft Fabric](https://app.fabric.microsoft.com)
 2. Navigate to workspace: `mktsurveil-surveillance-dev`
-3. Go to **Settings** → **Ontology** (or **IQ** → **Ontology**)
-4. Click **Import ontology** → upload `ontology/market-surveillance.rdf`
-5. Map entity types to Eventhouse tables (see
-   [Ontology Playground Guide](ontology-playground-guide.md#step-5-import-into-fabriciq-schema--data-mapping)
-   for the full mapping table)
-6. Save the mapping
+3. Click on **Market Surveillance** ontology item
+4. You'll see the entity graph: Brokers → Funds → Holdings → Beneficial Owners
 
-### Ask Natural Language Questions
+### Try Natural Language Queries
 
-After importing, open **Copilot for Fabric** (or the IQ query bar) in the
+Open **Copilot for Fabric** (or the IQ query bar) in the
 Fabric portal and try these sample questions:
 
 **Beneficial Ownership & Entity Resolution:**
@@ -137,10 +130,22 @@ Fabric portal and try these sample questions:
 For a detailed guide on ontology design and the schema-to-data relationship,
 see [Ontology Playground Guide](ontology-playground-guide.md).
 
-## 8. Set Up Data Activator (Optional)
+## 8. Verify Data Activator Alerts
 
-For autonomous real-time alerting without the dashboard:
-See [Data Activator Setup Guide](data-activator-setup.md)
+Data Activator was automatically configured during `azd up`. To verify:
+
+1. In the Fabric workspace, click **Surveillance Alerts** (Reflex item)
+2. You'll see 4 trigger rules:
+   - Spoofing Alert (runs every 30s)
+   - Layering Alert (runs every 30s)
+   - Wash Trading Alert (runs every 5m)
+   - Volume Anomaly Alert (runs every 1m)
+3. Each trigger monitors KQL detection functions and fires when patterns are found
+4. Actions: HTTP webhook (intervention API) and Teams notification
+
+> **Note:** If triggers show as inactive, click **Activate** on each one.
+> Trigger activation requires data flowing through Eventhouse — run a
+> simulation from the dashboard first to populate the tables.
 
 ## Architecture Overview
 

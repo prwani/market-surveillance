@@ -68,6 +68,18 @@ if [[ -n "${KQL_URI}" && -n "${USER_UPN}" ]]; then
   echo "✓ KQL admin access granted to ${USER_UPN}"
 fi
 
+# 6. Deploy FabricIQ ontology
+echo "Deploying FabricIQ ontology..."
+if [[ -n "${WORKSPACE_ID}" && -f "${SCRIPT_DIR}/deploy-ontology.sh" ]]; then
+  bash "${SCRIPT_DIR}/deploy-ontology.sh" "${WORKSPACE_ID}"
+fi
+
+# 7. Deploy Data Activator Reflex triggers
+echo "Deploying Data Activator..."
+if [[ -n "${WORKSPACE_ID}" && -f "${SCRIPT_DIR}/deploy-activator.sh" ]]; then
+  bash "${SCRIPT_DIR}/deploy-activator.sh" "${WORKSPACE_ID}"
+fi
+
 echo "═══════════════════════════════════════════════════════"
-echo " Post-provision complete"
+echo " Post-provision complete (7 steps)"
 echo "═══════════════════════════════════════════════════════"

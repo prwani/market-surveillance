@@ -1,5 +1,9 @@
 # Data Activator (Reflex) Setup Guide
 
+> **Note:** Data Activator is automatically deployed by `azd up`. This guide
+> is only needed if you want to customize the trigger rules or if the
+> automatic deployment encountered an API limitation in your tenant.
+
 Step-by-step instructions for configuring real-time surveillance triggers in the Fabric portal. Data Activator requires portal-based configuration — this guide walks through the full setup.
 
 ## Prerequisites
