@@ -149,7 +149,7 @@ policy for throughput vs. latency:
 
 ## Dashboard Container App
 
-The FastAPI dashboard is the **sole Container App**. It serves:
+The FastAPI dashboard is the Container App. It serves:
 
 - Real-time alert and case visualization (reads from Eventhouse)
 - Simulation demos (uses the Python agent library locally)
@@ -188,4 +188,4 @@ az fabric capacity suspend --capacity-name mktsurveilfabricdev --resource-group 
 - **KQL concurrency** scales with capacity tier; use materialized views for hot paths
 - **Data Activator triggers** scale automatically within the Fabric capacity
 - **Eventhouse tuning** — adjust hot cache, partitioning, and ingestion batching
-- **Dashboard is the sole Container App** — UI and simulation demos only
+- **Dashboard Container App** — UI and simulation demos

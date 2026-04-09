@@ -1,7 +1,7 @@
 # Deployment Guide
 
 Deploy the Market Surveillance Agent System to Azure using the Azure Developer CLI (`azd`).
-All detection runs natively in Fabric Eventhouse via KQL stored functions — no workers needed.
+All detection runs natively in Fabric Eventhouse via KQL stored functions.
 
 ## Prerequisites
 

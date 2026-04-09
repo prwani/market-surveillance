@@ -51,40 +51,42 @@ flowchart TD
 
 - **Fabric-native detection** — KQL stored functions for spoofing, layering, wash trading, and anomaly detection run directly in Eventhouse
 - **Dual anomaly detection** — both KQL `series_decompose_anomalies` and Fabric RTI built-in ML models (Signal Watcher, Change Spike Detector, etc.)
-- **Data Activator triggers** — Reflex triggers for autonomous intervention under 60 seconds (deterministic, no worker containers)
+- **Data Activator triggers** — Reflex triggers for autonomous intervention under 60 seconds
 - **Operations Agent** — AI advisory layer that monitors data and sends contextual recommendations via Teams (~5 min cycle)
 - **Ontology graph** in Eventhouse — UBO resolution via 3-hop graph traversal (`resolve_ubo()`), regulatory lookup (`get_regulations()`)
 - **FabricIQ ontology (RDF/OWL)** — importable into FabricIQ for natural language queries ("Which brokers share a UBO?")
 - **Evidence notebook** — Fabric Notebook using built-in GPT-4.1 for regulatory narrative generation (no API key needed)
 - **Exchange data simulator** with configurable manipulation injection (spoofing, layering, wash trading, price anomalies)
-- **Python agent library** retained for local testing and simulation demos
-- **FastAPI web dashboard** — sole Container App for UI, simulation demos, alert inspection, and KQL explorer
+- **Python agent library** for local testing and simulation demos
+- **FastAPI web dashboard** — Container App for UI, simulation demos, alert inspection, and KQL explorer
 - **Automated deployment** — `azd up` provisions everything (Fabric capacity, Eventhouse, ontology, Data Activator, dashboard)
 
 ## Architecture
 
-Detection runs **natively in Fabric RTI** — no worker containers are needed:
+All detection, streaming, and analytics run inside Microsoft Fabric:
 
 | Component | Purpose |
 |---|---|
 | **Fabric Eventhouse** | KQL database with stored functions for all detection logic |
 | **KQL Stored Functions** | Spoofing, layering, wash trading, and anomaly detection |
-| **Data Activator** | Reflex triggers for autonomous intervention |
+| **Anomaly Detection Models** | 12 built-in ML models for price/volume anomaly detection |
+| **Data Activator** | Reflex triggers for autonomous intervention (< 60s) |
+| **Operations Agent** | AI advisory layer with contextual recommendations via Teams |
 | **Fabric Eventstreams** | Event ingestion from exchanges / simulator |
-| **Dashboard Container App** | Sole Container App — UI and simulation demos |
+| **FabricIQ Ontology** | RDF/OWL schema for natural language queries |
+| **Ontology Graph** | Beneficial ownership resolution (3-hop UBO traversal) |
+| **Evidence Notebook** | GPT-4.1 powered regulatory narrative generation |
+| **Dashboard Container App** | UI for simulation, alerts, cases, and KQL queries |
 
-The system uses a **Fabric-native** approach that eliminates worker containers and ~$850/month in redundant services:
+### Cost
 
-| Component | Fabric-Native (this project) | Traditional Approach |
-|---|---|---|
-| Detection Logic | **KQL stored functions + Data Activator** (in Fabric capacity) | Worker containers polling Eventhouse |
-| KQL Database | **Fabric Eventhouse** (included in capacity) | Standalone Azure Data Explorer (~$600/mo) |
-| Event Ingestion | **Fabric Eventstreams** (included in capacity) | Standalone Event Hubs (~$250/mo) |
-| Compute | **Single Container App** (dashboard only) | Multiple Container Apps (workers + dashboard) |
-| Primary Cost | **F8 Fabric capacity (~$1,049/mo)** | ADX + Event Hubs + Fabric (~$1,900/mo) |
-
-All detection, streaming, and analytics run inside the Microsoft Fabric capacity.
-The dashboard Container App provides the UI and simulation demo endpoints.
+| Component | Monthly Cost | Notes |
+|-----------|-------------|-------|
+| Fabric F8 capacity | ~$1,049 | Includes Eventhouse, Eventstreams, Data Activator, FabricIQ — pausable when not in use |
+| Container App (dashboard) | ~$15 | Single container |
+| ACR, Key Vault, Storage | ~$5 | Supporting services |
+| **Total (active)** | **~$1,070** | |
+| **Total (paused)** | **~$20** | Fabric capacity paused |
 
 ### Fabric RTI Native Features
 
@@ -149,7 +151,7 @@ azd up
 This provisions:
 1. Fabric F8 capacity with Eventhouse and KQL database
 2. Key Vault for secrets management
-3. Container App for the dashboard (sole Container App — no workers)
+3. Container App for the dashboard
 4. Storage account for outputs and checkpoints
 5. Fabric workspace with detection stored functions and ontology tables
 
@@ -174,7 +176,7 @@ market-surveillance/
 │   │   ├── intervention_agent.py       # Automated intervention decisions
 │   │   ├── evidence_collection_agent.py# Evidence compilation & reporting
 │   │   └── base_agent.py               # Shared agent base class
-│   ├── dashboard/                      # FastAPI web dashboard (sole Container App)
+│   ├── dashboard/                      # FastAPI web dashboard
 │   │   ├── main.py                     # API routes and HTML pages
 │   │   └── templates.py                # HTML template functions
 │   ├── simulator/                      # Exchange data simulator
@@ -273,7 +275,7 @@ The FastAPI dashboard provides a browser-based interface for the surveillance sy
 |---|---|
 | Microsoft Fabric Capacity (F8) | Eventhouse (KQL), Eventstreams, Data Activator, notebooks |
 | Key Vault | Secrets for KQL URI, storage connection strings |
-| Container Apps Environment | Hosts the FastAPI dashboard (sole Container App) |
+| Container Apps Environment | Hosts the FastAPI dashboard |
 | Storage Account | Surveillance output and checkpoint data |
 | Log Analytics Workspace | Centralized monitoring and diagnostics |
 
