@@ -72,20 +72,20 @@ detection thresholds are breached:
 
 | Trigger | Condition | Action |
 |---------|-----------|--------|
-| Spoofing alert | Cancel ratio > 80% within 5 s window | Log alert + notify compliance |
-| Layering alert | ≥3 price levels with coordinated orders | Log alert + flag for review |
-| Wash trading alert | Same-broker trades > 3 in 1 min | Log alert + escalate |
-| Price anomaly | Deviation > 3σ from rolling VWAP | Log alert + notify risk team |
+| Spoofing alert | `detect_spoofing()` returns rows | Teams or email alert |
+| Layering alert | `detect_layering()` returns rows | Teams or email alert |
+| Wash trading alert | `detect_wash_trading()` returns rows | Teams or email alert |
+| Price anomaly | `detect_anomalies_advanced()` returns rows | Teams or email alert |
 
-Triggers run autonomously with no polling or cold-start delays. Scaling
-considerations:
+The current deployment config uses 5-minute polling intervals for all four
+rules. Scaling considerations:
 
-- **Trigger evaluation frequency** — Data Activator evaluates conditions on a
-  cadence tied to the Fabric capacity. Higher SKUs evaluate more frequently.
-- **Trigger fan-out** — each trigger can fire multiple actions (Teams notification,
-  Power Automate flow, trade halt). Fan-out does not consume additional CUs.
-- **Trigger count** — there is no hard limit on the number of Reflex triggers;
-  create separate triggers per detection type and exchange for isolation.
+- **Trigger evaluation frequency** — the deployment builder currently supports
+  Fabric polling intervals of 5 minutes or higher.
+- **Trigger fan-out** — the automated path provisions Teams or email alerts.
+  Additional actions can be added by extending the Reflex payload builder.
+- **Trigger count** — the baseline repo deploys one rule per detection type;
+  you can add more isolated rules if you need exchange-specific routing.
 
 ---
 

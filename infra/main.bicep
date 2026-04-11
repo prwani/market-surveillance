@@ -122,7 +122,7 @@ resource checkpointsContainer 'Microsoft.Storage/storageAccounts/blobServices/co
 // ──────────────────────────────────────────────
 // Container Registry — dashboard image
 // ──────────────────────────────────────────────
-var acrName = replace('${projectName}acr', '-', '')
+var acrName = toLower(replace('${projectName}acr${environmentName}', '-', ''))
 resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: acrName
   location: location

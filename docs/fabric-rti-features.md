@@ -31,7 +31,7 @@ basic Z-score detection:
 6. Review recommended models — **Signal Watcher (Seasonal)** is recommended for trading data
 7. Adjust sensitivity (start with Medium, tune based on false positive rate)
 8. **Publish** to Real-Time Hub for continuous monitoring
-9. Configure **alert action** → Data Activator for automated intervention
+9. Configure **alert action** → Data Activator for deterministic Teams or email alerts
 
 ### Integration with Our Detection Pipeline
 
@@ -40,7 +40,7 @@ Anomaly Detection Models (continuous, Fabric-managed)
         ↓ publishes to Real-Time Hub
 Data Activator (triggers on anomaly events)
         ↓
-Trade Halt / Teams Notification
+Teams or email alert
 ```
 
 The anomaly detector runs continuously alongside our KQL stored functions.
@@ -74,16 +74,16 @@ understands business goals, and recommends actions via Microsoft Teams.
 
 | Aspect | Data Activator (Primary) | Operations Agent (Advisory) |
 |--------|--------------------------|----------------------------|
-| **Polling interval** | Configurable (30s) | Fixed 5 minutes |
+| **Polling interval** | Configured for 5 minutes in this repo | Fixed 5 minutes |
 | **Decision logic** | Deterministic KQL rules | Probabilistic LLM |
-| **Detection latency** | <60 seconds ✅ | ~5 minutes ❌ |
-| **Best for** | Autonomous trade halts | Contextual insights, deeper investigation |
+| **Detection latency** | Depends on configured rule cadence | ~5 minutes |
+| **Best for** | Deterministic alert fan-out | Contextual insights, deeper investigation |
 | **Reliability** | Deterministic — same input = same output | LLM-based — may vary |
 
-**The 5-minute polling interval and probabilistic LLM decisions make Operations
-Agent unsuitable for autonomous trade halts** (which require ≤60s and
-deterministic logic). However, it excels at providing contextual analysis that
-humans can act on.
+Operations Agent is still valuable, but it remains the secondary layer because
+the baseline deployment uses Data Activator for deterministic rule evaluation
+and alert delivery, while Operations Agent focuses on narrative context and
+human review workflows.
 
 ### Recommended Configuration
 
@@ -126,10 +126,10 @@ Semantic Information:
 ### Architecture: Two-Layer Detection
 
 ```
-Layer 1 — Deterministic (Primary, <60s):
+Layer 1 — Deterministic (Primary, 5-minute cadence in this repo):
   Eventhouse → KQL stored functions → Data Activator
-  → Autonomous: trade halt, regulator notification, broker suspension
-  
+  → Teams or email alert
+   
 Layer 2 — AI Advisory (Secondary, ~5min):
   Eventhouse → Operations Agent (LLM-powered)
   → Advisory: contextual analysis, UBO investigation, compliance escalation

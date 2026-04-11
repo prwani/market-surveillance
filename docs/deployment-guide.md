@@ -38,9 +38,10 @@ azd up
    - Container App (dashboard)
    - Key Vault, Storage, Log Analytics
 2. **Fabric artifacts** (via postprovision hook):
-   - Workspace, Eventhouse, KQL database
-   - Detection stored functions
-   - Ontology graph tables
+    - Workspace, Eventhouse, KQL database
+    - Detection stored functions
+    - Ontology graph tables
+    - `Market_Surveillance` ontology item
 3. **Dashboard** (via azd deploy):
    - Builds Docker image
    - Pushes to ACR
@@ -98,6 +99,15 @@ az resource show \
   --query "properties.state"
 ```
 The capacity must be in `Active` state. If paused, resume it in the Azure portal.
+
+### Ontology creation fails during postprovision
+
+**Symptom:** `azd up` stops during `deploy-ontology.sh`
+
+**Fix:** Ensure the workspace is on a supported Fabric capacity and that the
+tenant has ontology preview enabled. The deployment intentionally fails if the
+ontology item cannot be created, so missing ontology items are surfaced during
+`azd up` instead of being hidden until later review.
 
 ### Dashboard shows "KQL not configured"
 

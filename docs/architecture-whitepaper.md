@@ -170,7 +170,7 @@ Manipulation Score → RTI Activator (intervention) → Evidence → FabricIQ (G
 | GenAI Narrative | Azure OpenAI via FabricIQ | Regulatory case summaries and explainability |
 | Agent Orchestration | Semantic Kernel + Azure AI Agents | Multi-agent coordination logic |
 | Presentation | Real-Time Dashboard + Power BI | Regulatory dashboards |
-| Intervention | Data Activator Reflex | Autonomous trade halt and notification |
+| Intervention | Data Activator Reflex | Deterministic alert fan-out to Teams or email |
 
 ---
 
@@ -248,7 +248,7 @@ flowchart TD
     style Presentation fill:#fce7f3,stroke:#be185d
 ```
 
-### 4.2 60-Second Detection-to-Halt Timeline
+### 4.2 Detection-to-Alert Timeline
 
 ```mermaid
 sequenceDiagram
@@ -257,10 +257,10 @@ sequenceDiagram
     participant KQL as KQL Engine
     participant ML as FabricIQ ML
     participant ACT as Data Activator
-    participant IA as Intervention Agent
-    participant REG as Regulator
+    participant TEAMS as Teams / Alert Desk
+    participant NB as Evidence Notebook
 
-    Note over E,REG: T=0 — Trade events arrive
+    Note over E,NB: T=0 — Trade events arrive
 
     E->>ES: Raw order/trade events (T+0s)
     ES->>KQL: Normalized stream (T+2s)
@@ -268,14 +268,12 @@ sequenceDiagram
     KQL->>ML: Flag suspicious orders (T+8s)
     ML->>ML: Run ML scoring pipeline (T+15s)
     ML->>ACT: Return manipulation score > threshold (T+20s)
-    ACT->>IA: Trigger intervention signal (T+22s)
-    IA->>E: POST /halt-trade to exchange API (T+25s)
-    IA->>REG: Push alert + preliminary evidence (T+30s)
-    IA->>ML: Request evidence compilation (T+32s)
-    ML->>ML: GenAI narrative + audit trail (T+50s)
-    ML->>REG: Full case report (T+58s)
+    ACT->>TEAMS: Send deterministic Reflex alert (T+5m)
+    TEAMS->>NB: Analyst requests evidence package (on demand)
+    NB->>NB: Compile narrative + audit trail
+    NB->>TEAMS: Return investigation summary
 
-    Note over E,REG: T=60s — Full cycle complete
+    Note over E,NB: Current repo baseline completes alert fan-out on the configured Reflex cadence
 ```
 
 ### 4.3 Data Model — Eventhouse Schema
@@ -925,7 +923,7 @@ While direct Fabric RTI market surveillance case studies are limited (the techno
 - **Scale:** 10 billion messages/day across US equities
 - **Latency:** Real-time alerts within 30 seconds
 - **False positive rate:** ~2% after ML filtering
-- **Relevance:** Establishes the 30-60 second baseline that Fabric RTI can match
+- **Relevance:** Establishes an aspirational 30-60 second baseline; the current repo deployment prioritizes deterministic 5-minute Reflex polling instead
 
 #### London Stock Exchange Group (LSEG)
 - **Technology:** Azure-based streaming (comparable to Fabric RTI architecture)
@@ -1103,7 +1101,7 @@ For detected cross-exchange manipulation (e.g., price manipulation on HKEX affec
 ├─────────────────────────────────────────────────────────────────────┤
 │ Audit:       All queries logged to immutable Eventhouse audit table  │
 │              All agent actions logged with actor, timestamp, reason  │
-│              All trade halt decisions stored with full evidence chain│
+│              All alerting decisions stored with full evidence chain  │
 ├─────────────────────────────────────────────────────────────────────┤
 │ Compliance:  MAS Technology Risk Management Guidelines              │
 │              HKEX Cybersecurity Fortification Initiative (CFI)       │
@@ -1146,7 +1144,7 @@ Since raw trade data cannot leave its jurisdiction, the Cross-Market Agent uses:
 ### Phase 3: Automation (Months 7–9)
 - [ ] Deploy Intervention Agent with exchange API integration
 - [ ] Implement Cross-Market Agent (federated correlation)
-- [ ] Deploy Data Activator Reflex for autonomous trade halts
+- [ ] Expand Data Activator Reflex beyond alerting into downstream remediation workflows
 - [ ] Integrate with MAS/SFC/SEBI regulatory portals
 - [ ] Stress test: 5,000 events/second synthetic load
 - [ ] Implement data sovereignty controls and audit logging

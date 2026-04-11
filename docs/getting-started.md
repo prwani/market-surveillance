@@ -38,9 +38,9 @@ Click **Alerts** to see detected manipulation patterns:
 
 ## 4. Review Intervention Cases
 
-Click **Cases** to see automated interventions:
-- Each case shows: trade halt, regulator notification, broker suspension
-- Status: NOTIFIED (regulator was alerted)
+Click **Cases** to review the dashboard demo's generated intervention cases:
+- Each case summarizes the alert, supporting evidence, and recommended response
+- Status values come from the local demo workflow shown in the dashboard
 
 ## 5. Try KQL Queries
 
@@ -90,68 +90,49 @@ detect_anomalies()
    - ✅ Tables: TRADES, ORDER_BOOK_EVENTS, ENTITIES, RELATIONSHIPS
    - ✅ Stored Functions: detect_spoofing, detect_layering, etc.
 
-## 7. Explore the Ontology in FabricIQ
+## 7. Inspect the Ontology Item
 
-The ontology was automatically imported during `azd up`. To explore it:
+The ontology item is created during `azd up` as `Market_Surveillance`. To inspect it:
 
 1. Open [Microsoft Fabric](https://app.fabric.microsoft.com)
 2. Navigate to workspace: `mktsurveil-surveillance-<env>`
-3. Click on **Market Surveillance** ontology item
-4. You'll see the entity graph: Brokers → Funds → Holdings → Beneficial Owners
+3. Click on **Market_Surveillance**
+4. Verify the item shows the deployed entity model:
+   - Broker, Fund, HoldingCompany, BeneficialOwner
+   - Exchange, Instrument, Regulator, Regulation
+   - Trade, Alert, InterventionCase
+5. Verify the relationship model includes:
+   - `ownedBy`, `managedBy`, `controlledBy`
+   - `listedOn`, `regulatedBy`, `enforces`
+   - `executedBy`, `tradedInstrument`, `triggersAlert`
 
-### Try Natural Language Queries
+> **Note:** Fabric item names created through the API must use letters,
+> numbers, or `_`, so the deployed ontology item is named
+> `Market_Surveillance`.
 
-Open **Copilot for Fabric** (or the IQ query bar) in the
-Fabric portal and try these sample questions:
-
-**Beneficial Ownership & Entity Resolution:**
-- "Who is the ultimate beneficial owner of BROKER_SGX_001?"
-- "Which brokers share a beneficial owner?"
-- "Show me the ownership chain for Alpha Fund Singapore"
-- "List all brokers under the same holding company as BROKER_HKEX_001"
-
-**Trade Surveillance:**
-- "Show me all trades on SGX for OCBC in the last hour"
-- "Which brokers have the highest trade volume today?"
-- "Find trades where the buyer and seller are under the same holding company"
-- "What is the average trade price for DBS on SGX?"
-
-**Manipulation Detection:**
-- "Which brokers have a cancel rate above 80%?"
-- "Find brokers who placed orders at 5 or more price levels then cancelled them"
-- "Are there any wash trades between related accounts?"
-- "Show me price anomalies across all exchanges"
-
-**Regulatory:**
-- "Which regulations apply to spoofing on SGX?"
-- "What is the regulatory body for HKEX?"
-- "List all regulations enforced by MAS"
-
-> **Note:** FabricIQ translates these natural language questions into KQL
-> queries using the ontology as a guide. The ontology tells FabricIQ that
-> "beneficial owner" means traversing the `parent_entity → beneficial_owner`
-> relationship chain in the RELATIONSHIPS table — the user doesn't need to
-> know KQL or the table structure.
-
-For a detailed guide on ontology design and the schema-to-data relationship,
-see [Ontology Playground Guide](ontology-playground-guide.md).
+For a detailed guide on visualizing the RDF in Ontology Playground and
+manually binding the schema in another FabricIQ setup, see
+[Ontology Playground Guide](ontology-playground-guide.md).
 
 ## 8. Verify Data Activator Alerts
 
 Data Activator was automatically configured during `azd up`. To verify:
 
 1. In the Fabric workspace, click **Surveillance Alerts** (Reflex item)
-2. You'll see 4 trigger rules:
-   - Spoofing Alert (runs every 30s)
-   - Layering Alert (runs every 30s)
-   - Wash Trading Alert (runs every 5m)
-   - Volume Anomaly Alert (runs every 1m)
-3. Each trigger monitors KQL detection functions and fires when patterns are found
-4. Actions: HTTP webhook (intervention API) and Teams notification
+2. Verify the deployed rule set is present:
+   - Spoofing Alert
+   - Layering Alert
+   - Wash Trading Alert
+   - Price And Volume Anomaly Alert
+3. Each rule runs a KQL detection function against the `surveillance` database on a
+   5-minute cadence
+4. The default deployment action is a Teams notification sent to
+   `FABRIC_ADMIN_UPN` (or the signed-in Azure user if that variable is unset)
+5. Run a simulation from the dashboard, then inspect the Reflex run history in the
+   Fabric portal to confirm the rules evaluate against live Eventhouse data
 
-> **Note:** If triggers show as inactive, click **Activate** on each one.
-> Trigger activation requires data flowing through Eventhouse — run a
-> simulation from the dashboard first to populate the tables.
+> **Note:** `azd up` creates the Reflex item and rules automatically. No manual
+> JSON import or portal-based authoring is required for the baseline deployment.
 
 ## 9. Explore Fabric RTI Features (Optional)
 
@@ -198,10 +179,10 @@ Exchange Simulator
     ┌─────────┼──────────┐
     ▼                    ▼
 Data Activator      Dashboard (ACA)
-(Reflex triggers)   (FastAPI UI)
+(Reflex alerts)     (FastAPI UI)
     │
     ▼
-Trade Halt / Regulator Alert / Teams Notification
+Teams Notification / Alert Desk Review
 ```
 
 ## Troubleshooting

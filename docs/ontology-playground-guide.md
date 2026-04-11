@@ -4,6 +4,11 @@ This guide shows how to design your ontology schema in
 [Ontology Playground](https://microsoft.github.io/Ontology-Playground/),
 then connect it to live Eventhouse data via FabricIQ.
 
+> **Note:** This repo's `azd up` flow creates the `Market_Surveillance`
+> ontology item automatically. Use this guide when you want to inspect or
+> extend the RDF visually, or when you want to bind the schema in a different
+> FabricIQ setup.
+
 ## Understanding the Two Layers
 
 | Layer | Tool | What It Contains |

@@ -71,8 +71,8 @@ if [[ -n "${KQL_URI}" && -n "${USER_UPN}" ]]; then
   echo "✓ KQL admin access granted to ${USER_UPN}"
 fi
 
-# 6. Deploy FabricIQ ontology
-echo "Deploying FabricIQ ontology..."
+# 6. Deploy Fabric ontology item
+echo "Deploying Fabric ontology item..."
 if [[ -n "${WORKSPACE_ID}" && -f "${SCRIPT_DIR}/deploy-ontology.sh" ]]; then
   bash "${SCRIPT_DIR}/deploy-ontology.sh" "${WORKSPACE_ID}"
 fi

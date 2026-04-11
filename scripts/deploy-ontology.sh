@@ -1,132 +1,106 @@
 #!/usr/bin/env bash
-# Deploy ontology to FabricIQ via REST API
+# Deploy ontology to Microsoft Fabric via REST API.
 set -euo pipefail
 
 WS_ID="${1:?Usage: deploy-ontology.sh <workspace-id>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+RDF_PATH="${SCRIPT_DIR}/../ontology/market-surveillance.rdf"
+ONTOLOGY_NAME="Market_Surveillance"
 
 TOKEN=$(az account get-access-token --resource "https://api.fabric.microsoft.com" --query accessToken -o tsv)
+REQUEST_JSON=$(python3 "${SCRIPT_DIR}/build_ontology_payload.py" --rdf "${RDF_PATH}" --display-name "${ONTOLOGY_NAME}")
 
-# Convert RDF to Fabric ontology JSON definition
-# The Fabric API expects a specific JSON structure, not RDF/OWL
-DEFINITION_JSON=$(python3 -c "
-import json, base64, xml.etree.ElementTree as ET
+HEADERS_FILE=$(mktemp)
+BODY_FILE=$(mktemp)
 
-# Parse the RDF
-tree = ET.parse('${SCRIPT_DIR}/../ontology/market-surveillance.rdf')
-root = tree.getroot()
-ns = {
-    'owl': 'http://www.w3.org/2002/07/owl#',
-    'rdfs': 'http://www.w3.org/2000/01/rdf-schema#',
-    'rdf': 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
-    'ont': 'http://example.org/ontology/market-surveillance/',
-    'xsd': 'http://www.w3.org/2001/XMLSchema#',
+cleanup() {
+  rm -f "${HEADERS_FILE}" "${BODY_FILE}"
+}
+trap cleanup EXIT
+
+header_value() {
+  local name="$1"
+  awk -v header="${name}" 'BEGIN { IGNORECASE=1 }
+    $0 ~ "^" header ":" {
+      sub(/^[^:]+:[[:space:]]*/, "")
+      sub(/\r$/, "")
+      print
+      exit
+    }' "${HEADERS_FILE}"
 }
 
-# Extract entity types
-entity_types = []
-for cls in root.findall('.//owl:Class', ns):
-    about = cls.get('{http://www.w3.org/1999/02/22-rdf-syntax-ns#}about', '')
-    label_el = cls.find('rdfs:label', ns)
-    comment_el = cls.find('rdfs:comment', ns)
-    icon_el = cls.find('ont:icon', ns)
-    color_el = cls.find('ont:color', ns)
-
-    name = label_el.text if label_el is not None else about.split('/')[-1]
-    entity_types.append({
-        'name': name,
-        'description': comment_el.text if comment_el is not None else '',
-        'icon': icon_el.text if icon_el is not None else '',
-        'color': color_el.text if color_el is not None else '#0078D4',
-        'properties': [],
-    })
-
-# Extract data properties and attach to entity types
-entity_map = {e['name']: e for e in entity_types}
-for prop in root.findall('.//owl:DatatypeProperty', ns):
-    label_el = prop.find('rdfs:label', ns)
-    domain_el = prop.find('rdfs:domain', ns)
-    prop_type_el = prop.find('ont:propertyType', ns)
-    is_id_el = prop.find('ont:isIdentifier', ns)
-
-    if label_el is not None and domain_el is not None:
-        domain_ref = domain_el.get('{http://www.w3.org/1999/02/22-rdf-syntax-ns#}resource', '')
-        entity_name = domain_ref.split('/')[-1]
-        if entity_name in entity_map:
-            entity_map[entity_name]['properties'].append({
-                'name': label_el.text,
-                'type': prop_type_el.text if prop_type_el is not None else 'string',
-                'isIdentifier': is_id_el is not None and is_id_el.text == 'true',
-            })
-
-# Extract relationships
-relationships = []
-for prop in root.findall('.//owl:ObjectProperty', ns):
-    label_el = prop.find('rdfs:label', ns)
-    domain_el = prop.find('rdfs:domain', ns)
-    range_el = prop.find('rdfs:range', ns)
-
-    if label_el is not None and domain_el is not None and range_el is not None:
-        domain_ref = domain_el.get('{http://www.w3.org/1999/02/22-rdf-syntax-ns#}resource', '')
-        range_ref = range_el.get('{http://www.w3.org/1999/02/22-rdf-syntax-ns#}resource', '')
-        relationships.append({
-            'name': label_el.text,
-            'fromEntityType': domain_ref.split('/')[-1],
-            'toEntityType': range_ref.split('/')[-1],
-        })
-
-# Build Fabric ontology definition
-ontology_def = {
-    'entityTypes': entity_types,
-    'relationships': relationships,
+http_code() {
+  awk 'toupper($1) ~ /^HTTP\// { code=$2 } END { print code }' "${HEADERS_FILE}"
 }
 
-# Platform part
-platform = {
-    'schemaVersion': '1.0',
-    'metadata': {
-        'type': 'Ontology',
-        'displayName': 'Market Surveillance',
-    }
+poll_operation() {
+  local location="$1"
+  local delay="$2"
+  local attempts=0
+
+  while (( attempts < 20 )); do
+    sleep "${delay}"
+    curl -sS -D "${HEADERS_FILE}" -o "${BODY_FILE}" -X GET "${location}" \
+      -H "Authorization: Bearer ${TOKEN}" \
+      -H "Content-Type: application/json"
+
+    local status
+    status=$(jq -r '.status // empty' "${BODY_FILE}")
+    case "${status}" in
+      Succeeded)
+        return 0
+        ;;
+      Failed)
+        echo "✗ Ontology creation operation failed: $(cat "${BODY_FILE}")" >&2
+        return 1
+        ;;
+      Running|InProgress|NotStarted|"")
+        delay=$(header_value "Retry-After")
+        delay="${delay:-5}"
+        ;;
+      *)
+        echo "  Waiting for ontology operation: ${status}"
+        delay=$(header_value "Retry-After")
+        delay="${delay:-5}"
+        ;;
+    esac
+    attempts=$((attempts + 1))
+  done
+
+  echo "✗ Ontology creation operation did not complete in time" >&2
+  return 1
 }
 
-# Build the API payload
-payload = {
-    'displayName': 'Market Surveillance',
-    'description': 'Real-time market manipulation detection with beneficial ownership resolution',
-    'definition': {
-        'parts': [
-            {
-                'path': '.platform',
-                'payload': base64.b64encode(json.dumps(platform).encode()).decode(),
-                'payloadType': 'InlineBase64',
-            },
-            {
-                'path': 'definition.json',
-                'payload': base64.b64encode(json.dumps(ontology_def).encode()).decode(),
-                'payloadType': 'InlineBase64',
-            },
-        ]
-    }
-}
-
-print(json.dumps(payload))
-")
-
-echo "Creating FabricIQ ontology..."
-RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://api.fabric.microsoft.com/v1/workspaces/${WS_ID}/ontologies" \
+echo "Creating Fabric ontology item (${ONTOLOGY_NAME})..."
+curl -sS -D "${HEADERS_FILE}" -o "${BODY_FILE}" -X POST "https://api.fabric.microsoft.com/v1/workspaces/${WS_ID}/ontologies" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -d "${DEFINITION_JSON}")
+  -d "${REQUEST_JSON}"
 
-HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-BODY=$(echo "$RESPONSE" | head -n -1)
+HTTP_CODE=$(http_code)
+BODY=$(cat "${BODY_FILE}")
 
-if [[ "$HTTP_CODE" == "201" || "$HTTP_CODE" == "202" ]]; then
-  echo "✓ Ontology created"
-elif echo "$BODY" | grep -q "AlreadyInUse\|already exists"; then
-  echo "✓ Ontology already exists"
-else
-  echo "⚠ Ontology creation response (HTTP $HTTP_CODE): $BODY"
-  echo "  This may require manual import via Fabric portal if the API is not yet available in this tenant."
-fi
+case "${HTTP_CODE}" in
+  201)
+    echo "✓ Ontology created"
+    ;;
+  202)
+    LOCATION=$(header_value "Location")
+    RETRY_AFTER=$(header_value "Retry-After")
+    RETRY_AFTER="${RETRY_AFTER:-5}"
+    if [[ -z "${LOCATION}" ]]; then
+      echo "✗ Ontology creation returned 202 without a Location header" >&2
+      exit 1
+    fi
+    poll_operation "${LOCATION}" "${RETRY_AFTER}"
+    echo "✓ Ontology created"
+    ;;
+  *)
+    if echo "${BODY}" | grep -q "ItemDisplayNameAlreadyInUse\|AlreadyInUse\|already exists"; then
+      echo "✓ Ontology already exists"
+      exit 0
+    fi
+    echo "✗ Ontology creation failed (HTTP ${HTTP_CODE}): ${BODY}" >&2
+    exit 1
+    ;;
+esac

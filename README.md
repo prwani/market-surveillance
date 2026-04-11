@@ -26,7 +26,7 @@ flowchart TD
     ENT --> RDF
 
     subgraph Actions["🎯 Response Layer"]
-        DA["⚡ Data Activator\nReflex Triggers\n(< 60s, deterministic)"]
+        DA["⚡ Data Activator\nReflex Alerts\n(5 min, deterministic)"]
         OA["🧠 Operations Agent\nAI Advisory\n(~5min, contextual)"]
         NB["📝 Evidence Notebook\n(GPT-4.1 narrative)"]
     end
@@ -34,10 +34,8 @@ flowchart TD
     KQL --> DA
     ADM --> DA
     KQL --> OA
-    DA -->|"trade halt\nregulator alert\nbroker suspend"| EX["🏦 Exchanges\n(SGX / HKEX / NSE)"]
+    DA -->|"Teams alert\n(rule-based notification)"| TEAMS["💬 Microsoft Teams"]
     OA -->|"Teams recommendations"| TEAMS["💬 Microsoft Teams"]
-    DA --> NB
-    NB -->|"regulatory report"| EH
 
     DASH["🖥️ FastAPI Dashboard\n(Container App)"] --> EH
     DASH --> RDF
@@ -51,15 +49,15 @@ flowchart TD
 
 - **Fabric-native detection** — KQL stored functions for spoofing, layering, wash trading, and anomaly detection run directly in Eventhouse
 - **Dual anomaly detection** — both KQL `series_decompose_anomalies` and Fabric RTI built-in ML models (Signal Watcher, Change Spike Detector, etc.)
-- **Data Activator triggers** — Reflex triggers for autonomous intervention under 60 seconds
+- **Data Activator triggers** — Reflex rules that evaluate KQL outputs on a 5-minute cadence and send deterministic alerts
 - **Operations Agent** — AI advisory layer that monitors data and sends contextual recommendations via Teams (~5 min cycle)
 - **Ontology graph** in Eventhouse — UBO resolution via 3-hop graph traversal (`resolve_ubo()`), regulatory lookup (`get_regulations()`)
-- **FabricIQ ontology (RDF/OWL)** — importable into FabricIQ for natural language queries ("Which brokers share a UBO?")
+- **Fabric ontology item (RDF/OWL)** — created during deployment for schema browsing in Fabric
 - **Evidence notebook** — Fabric Notebook using built-in GPT-4.1 for regulatory narrative generation (no API key needed)
 - **Exchange data simulator** with configurable manipulation injection (spoofing, layering, wash trading, price anomalies)
 - **Python agent library** for local testing and simulation demos
 - **FastAPI web dashboard** — Container App for UI, simulation demos, alert inspection, and KQL explorer
-- **Automated deployment** — `azd up` provisions everything (Fabric capacity, Eventhouse, ontology, Data Activator, dashboard)
+- **Automated deployment** — `azd up` provisions everything (Fabric capacity, Eventhouse, ontology item, Reflex alerts, dashboard)
 
 ## Architecture
 
@@ -70,10 +68,10 @@ All detection, streaming, and analytics run inside Microsoft Fabric:
 | **Fabric Eventhouse** | KQL database with stored functions for all detection logic |
 | **KQL Stored Functions** | Spoofing, layering, wash trading, and anomaly detection |
 | **Anomaly Detection Models** | 12 built-in ML models for price/volume anomaly detection |
-| **Data Activator** | Reflex triggers for autonomous intervention (< 60s) |
+| **Data Activator** | Reflex rules for deterministic alert fan-out from KQL detection results |
 | **Operations Agent** | AI advisory layer with contextual recommendations via Teams |
 | **Fabric Eventstreams** | Event ingestion from exchanges / simulator |
-| **FabricIQ Ontology** | RDF/OWL schema for natural language queries |
+| **Fabric Ontology** | RDF-derived schema item for entity and relationship browsing |
 | **Ontology Graph** | Beneficial ownership resolution (3-hop UBO traversal) |
 | **Evidence Notebook** | GPT-4.1 powered regulatory narrative generation |
 | **Dashboard Container App** | UI for simulation, alerts, cases, and KQL queries |
@@ -153,7 +151,7 @@ This provisions:
 2. Key Vault for secrets management
 3. Container App for the dashboard
 4. Storage account for outputs and checkpoints
-5. Fabric workspace with detection stored functions and ontology tables
+5. Fabric workspace with detection stored functions, ontology tables, the `Market_Surveillance` ontology item, and the `Surveillance Alerts` Reflex item
 
 See [docs/deployment-guide.md](docs/deployment-guide.md) for detailed instructions
 and [docs/getting-started.md](docs/getting-started.md) for post-deployment verification.
@@ -194,7 +192,7 @@ market-surveillance/
 ├── scripts/                            # Deployment helper scripts
 │   ├── setup-fabric-workspace.sh       # Fabric workspace + Eventhouse setup
 │   ├── deploy-stored-functions.sh      # KQL stored function deployment
-│   ├── setup-ontology.sh               # Ontology graph setup
+│   ├── deploy-ontology.sh              # Fabric ontology item deployment
 │   ├── postprovision.sh                # azd postprovision hook
 │   ├── init-kql-tables.sh              # KQL table initialization
 │   ├── teardown.sh                     # Resource cleanup
