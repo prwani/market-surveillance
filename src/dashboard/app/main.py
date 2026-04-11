@@ -19,6 +19,13 @@ for _p in (_src_dir, _sim_dir):
         sys.path.insert(0, _p)
 
 from exchange_data_simulator import SimulationEngine, TradeEvent, OrderBookEvent  # noqa: E402
+from fabric_ingestion import (  # noqa: E402
+    ORDERBOOK_MAPPING_REFERENCE,
+    TRADES_MAPPING_REFERENCE,
+    build_inline_ingest_command,
+    build_order_record,
+    build_trade_record,
+)
 from agents import (  # noqa: E402
     PatternDetectionAgent,
     AnomalyDetectionAgent,
@@ -150,47 +157,24 @@ def _ingest_events_to_eventhouse(raw_events) -> int:
     trades = [e for e in raw_events if isinstance(e, TradeEvent)]
     orders = [e for e in raw_events if isinstance(e, OrderBookEvent)]
 
-    def _trade_tsv(ev):
-        d = dataclasses.asdict(ev)
-        return "\t".join([
-            str(d.get("event_id", "")),
-            str(d.get("timestamp", "")),
-            str(d.get("exchange_id", "")),
-            str(d.get("symbol", "")),
-            str(d.get("price", 0)),
-            str(d.get("quantity", 0)),
-            str(d.get("buyer_id", "")),
-            str(d.get("seller_id", "")),
-            str(d.get("order_type", "")),
-            str(d.get("venue", "")),
-        ])
-
-    def _order_tsv(ev):
-        d = dataclasses.asdict(ev)
-        return "\t".join([
-            str(d.get("event_id", "")),
-            str(d.get("timestamp", "")),
-            str(d.get("exchange_id", "")),
-            str(d.get("symbol", "")),
-            str(d.get("side", "")),
-            str(d.get("price", 0)),
-            str(d.get("quantity", 0)),
-            str(d.get("action", "")),
-            str(d.get("broker_id", "")),
-        ])
-
     total = 0
     for i in range(0, len(trades), _INGEST_BATCH_SIZE):
         batch = trades[i : i + _INGEST_BATCH_SIZE]
-        rows = "\n".join(_trade_tsv(t) for t in batch)
-        cmd = f".ingest inline into table TRADES <|\n{rows}"
+        cmd = build_inline_ingest_command(
+            table="TRADES",
+            records=[build_trade_record(t) for t in batch],
+            mapping_reference=TRADES_MAPPING_REFERENCE,
+        )
         _kusto_client.execute_mgmt(KQL_DB, cmd)
         total += len(batch)
 
     for i in range(0, len(orders), _INGEST_BATCH_SIZE):
         batch = orders[i : i + _INGEST_BATCH_SIZE]
-        rows = "\n".join(_order_tsv(o) for o in batch)
-        cmd = f".ingest inline into table ORDER_BOOK_EVENTS <|\n{rows}"
+        cmd = build_inline_ingest_command(
+            table="ORDER_BOOK_EVENTS",
+            records=[build_order_record(o) for o in batch],
+            mapping_reference=ORDERBOOK_MAPPING_REFERENCE,
+        )
         _kusto_client.execute_mgmt(KQL_DB, cmd)
         total += len(batch)
 

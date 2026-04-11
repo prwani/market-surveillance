@@ -57,7 +57,7 @@ flowchart TD
 - **Exchange data simulator** with configurable manipulation injection (spoofing, layering, wash trading, price anomalies)
 - **Python agent library** for local testing and simulation demos
 - **FastAPI web dashboard** — Container App for UI, simulation demos, alert inspection, and KQL explorer
-- **Automated deployment** — `azd up` provisions everything (Fabric capacity, Eventhouse, ontology item, Reflex alerts, dashboard)
+- **Automated deployment** — `azd up` first verifies required Fabric tenant settings, then provisions everything (Fabric capacity, Eventhouse, ontology item, Reflex alerts, dashboard)
 
 ## Architecture
 
@@ -106,6 +106,7 @@ See [Fabric RTI Features Guide](docs/fabric-rti-features.md) for setup instructi
 - Python 3.10+
 - `pip install -r requirements.txt`
 - (For full deployment) Azure CLI, an Azure subscription, and a Fabric-enabled tenant
+- (For `azd up`) a Fabric admin account or another identity that can read tenant settings via the Fabric admin API
 
 ### Local Demo (no Azure needed)
 
@@ -145,6 +146,13 @@ Deploy the entire infrastructure to Azure with a single command:
 ```bash
 azd up
 ```
+
+`azd up` now runs a preprovision check before any Azure resources are created.
+It verifies these Fabric tenant settings and stops early with guidance if either
+one is missing or still propagating:
+
+- `Users can create Ontology (preview) items`
+- `Detect anomalies in Real-Time Intelligence (Preview)`
 
 This provisions:
 1. Fabric F8 capacity with Eventhouse and KQL database
@@ -191,6 +199,8 @@ market-surveillance/
 │   └── anomaly_detection.kql           # Price/volume anomalies
 ├── scripts/                            # Deployment helper scripts
 │   ├── setup-fabric-workspace.sh       # Fabric workspace + Eventhouse setup
+│   ├── preprovision.sh                 # azd preprovision hook
+│   ├── check-fabric-prereqs.py         # Fabric tenant settings precheck
 │   ├── deploy-stored-functions.sh      # KQL stored function deployment
 │   ├── deploy-ontology.sh              # Fabric ontology item deployment
 │   ├── postprovision.sh                # azd postprovision hook
@@ -285,9 +295,11 @@ The FastAPI dashboard provides a browser-based interface for the surveillance sy
 | Eventhouse + KQL Database (`surveillance`) | Real-time KQL queries against streaming data |
 | Eventstreams | Ingestion pipeline from simulator to Eventhouse |
 
-The deployment is orchestrated by `azd up`, which runs the Bicep deployment and then
-executes `scripts/postprovision.sh` to create the Fabric artifacts via the
-Fabric REST API. See [docs/deployment-guide.md](docs/deployment-guide.md) for full details.
+The deployment is orchestrated by `azd up`, which first runs
+`scripts/preprovision.sh` to verify required Fabric tenant settings, then runs
+the Bicep deployment, and finally executes `scripts/postprovision.sh` to create
+the Fabric artifacts via the Fabric REST API. See
+[docs/deployment-guide.md](docs/deployment-guide.md) for full details.
 
 ## KQL Detection Queries
 

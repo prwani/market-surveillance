@@ -12,12 +12,20 @@ TOKEN=$(az account get-access-token --resource "https://kusto.kusto.windows.net"
 run_kql() {
   local name="$1"
   local query="$2"
+  local payload
   echo "  Creating table: ${name}..."
-  curl -s -X POST "${KQL_URI}/v1/rest/mgmt" \
+  payload=$(python3 - "${KQL_DB}" "${query}" <<'PY'
+import json
+import sys
+
+print(json.dumps({"db": sys.argv[1], "csl": sys.argv[2]}))
+PY
+)
+  curl -fsS -X POST "${KQL_URI}/v1/rest/mgmt" \
     -H "Authorization: Bearer ${TOKEN}" \
     -H "Content-Type: application/json" \
-    -d "{\"db\":\"${KQL_DB}\",\"csl\":\"${query}\"}" \
-    -o /dev/null -w ""
+    -d "${payload}" \
+    > /dev/null
 }
 
 # ── TRADES table ──────────────────────────────────────────

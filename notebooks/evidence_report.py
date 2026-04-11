@@ -14,9 +14,14 @@
 # regulatory narrative using Fabric's built-in OpenAI (gpt-4.1).
 
 # %% Cell 1 — Configuration
-CASE_ID = "CASE-001"  # Set via pipeline parameter
-KQL_URI = "https://trd-z85435m8eppbw7fm7f.z0.kusto.fabric.microsoft.com"
-KQL_DB = "surveillance"
+import os
+
+CASE_ID = os.environ.get("CASE_ID", "CASE-001")
+KQL_URI = os.environ.get("KQL_URI", "")
+KQL_DB = os.environ.get("KQL_DB", "surveillance")
+
+if not KQL_URI:
+    raise ValueError("Set KQL_URI before running this notebook.")
 
 
 # %% Cell 2 — Connect to Eventhouse

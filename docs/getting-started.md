@@ -110,6 +110,12 @@ The ontology item is created during `azd up` as `Market_Surveillance`. To inspec
 > numbers, or `_`, so the deployed ontology item is named
 > `Market_Surveillance`.
 
+> **Important:** Fabric also creates a companion graph model item named
+> `Market_Surveillance_graph_<id>`. That graph canvas stays empty until ontology
+> **data bindings** are configured. The current `azd up` flow deploys the
+> ontology schema, but it does not yet bind entity types to OneLake/Eventhouse
+> source tables, so seeing `Nodes (0)` and `Edges (0)` there is expected.
+
 For a detailed guide on visualizing the RDF in Ontology Playground and
 manually binding the schema in another FabricIQ setup, see
 [Ontology Playground Guide](ontology-playground-guide.md).
@@ -141,10 +147,12 @@ Two preview features enhance the detection pipeline:
 ### Anomaly Detection Models
 1. In the Fabric workspace, navigate to Eventhouse → `surveillance-eh`
 2. Enable **Python plugin** (Plugins → Python 3.11.7 DL)
-3. Select `TRADES` table → **Create Anomaly Detector**
-4. Configure: Value=`price`, Group by=`symbol`, Timestamp=`event_time`
-5. Run analysis → review recommended models
-6. Publish to Real-Time Hub for continuous monitoring
+3. Ensure a Fabric admin has enabled **Detect anomalies in Real-Time
+   Intelligence (Preview)** in tenant settings
+4. Select `TRADES` table → **Create Anomaly Detector**
+5. Configure: Value=`price`, Group by=`symbol`, Timestamp=`event_time`
+6. Run analysis → review recommended models
+7. Publish to Real-Time Hub for continuous monitoring
 
 ### Operations Agent (Advisory)
 1. In workspace, **Create** → **Operations Agent**
@@ -192,4 +200,5 @@ Teams Notification / Alert Desk Review
 | Dashboard shows 0 alerts | Run a simulation first (Simulate page) |
 | KQL page says "not configured" | `KQL_URI` env var not set — re-run `azd provision` |
 | Fabric capacity paused | Resume: `az fabric capacity resume --capacity-name mktsurveilfabric<env> --resource-group rg-<env>` |
+| `Market_Surveillance_graph_<id>` shows `Nodes (0)` / `Edges (0)` | Expected until ontology data bindings are added. Current deployment creates the schema item, not a populated bound graph model. |
 | `azd up` fails at Key Vault | Purge soft-deleted KV: `az keyvault purge --name mktsurveil-kv-<env>` then retry |

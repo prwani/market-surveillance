@@ -33,6 +33,12 @@ basic Z-score detection:
 8. **Publish** to Real-Time Hub for continuous monitoring
 9. Configure **alert action** → Data Activator for deterministic Teams or email alerts
 
+> **Important:** Python plugin enablement alone might not unlock detector
+> creation. If Fabric returns `FeatureNotAvailable`, a Fabric admin still needs
+> to enable **Detect anomalies in Real-Time Intelligence (Preview)** in the
+> Fabric admin portal tenant settings and allow time for that change to
+> propagate.
+
 ### Integration with Our Detection Pipeline
 
 ```
@@ -53,10 +59,37 @@ the rule-based KQL functions might miss.
 - One model configuration per anomaly detector item
 - Sufficient historical data improves accuracy (minimum: a few days at 1-second granularity)
 - Preview feature — subject to changes
+- Detector creation can still be blocked by tenant/capacity preview gating even
+  after the Python plugin is enabled and requires the tenant setting
+  **Detect anomalies in Real-Time Intelligence (Preview)**
 
 ### Setup Automation
 
-Add to `scripts/postprovision.sh` (after KQL table creation):
+The repo includes helper scripts for the repeatable parts of setup:
+
+```bash
+# Seed historical Eventhouse data ending near now
+python scripts/ingest-to-eventhouse.py \
+  --exchanges SGX \
+  --duration 86400 \
+  --events-per-second 1 \
+  --backfill-seconds 86400 \
+  --inject-price-anomaly \
+  --batch-size 500
+
+# Create an anomaly detector item once preview access is enabled
+bash scripts/deploy-anomaly-detector.sh <workspace-id> <kql-db-id>
+```
+
+`deploy-anomaly-detector.sh` creates a detector for the `TRADES` table using:
+
+- `event_time` as the timestamp column
+- `symbol` as the series identifier
+- `price` as the monitored value
+- auto-publish enabled so anomaly events can flow into the Real-Time Hub
+
+`scripts/postprovision.sh` still leaves plugin enablement manual:
+
 ```bash
 # Enable Python plugin on Eventhouse (required for anomaly detection models)
 echo "Enabling Python plugin on Eventhouse..."

@@ -9,6 +9,12 @@ then connect it to live Eventhouse data via FabricIQ.
 > extend the RDF visually, or when you want to bind the schema in a different
 > FabricIQ setup.
 
+> **Important:** The companion Fabric graph model item created beside the
+> ontology is not automatically populated by `azd up`. Fabric only fills that
+> graph experience after you add ontology data bindings. Static bindings require
+> OneLake-backed source tables; the repo's current Eventhouse-first deployment
+> does not create those bindings yet.
+
 ## Understanding the Two Layers
 
 | Layer | Tool | What It Contains |

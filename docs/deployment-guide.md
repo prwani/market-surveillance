@@ -8,6 +8,8 @@ All detection runs natively in Fabric Eventhouse via KQL stored functions.
 - Azure CLI (`az`) installed and logged in
 - Azure Developer CLI (`azd`) installed
 - Azure subscription with Fabric capacity rights
+- Fabric admin account (or another identity with `Tenant.Read.All`) so the
+  predeployment tenant-settings check can run
 - Python 3.10+ (for local testing)
 
 ## Quick Deploy (azd up)
@@ -26,6 +28,13 @@ azd env set AZURE_SUBSCRIPTION_ID "your-subscription-id"
 azd env set FABRIC_ADMIN_UPN "admin@yourtenant.onmicrosoft.com"
 azd env set FABRIC_SKU F8   # or F2 for cheaper dev
 
+# Verify the required Fabric tenant settings are enabled and already propagated:
+# - Users can create Ontology (preview) items
+# - Detect anomalies in Real-Time Intelligence (Preview)
+#
+# azd up now checks them automatically before provisioning starts and stops early
+# with guidance if they are disabled or still propagating.
+#
 # Deploy everything
 azd up
 ```
@@ -37,15 +46,19 @@ azd up
    - Container Registry (ACR)
    - Container App (dashboard)
    - Key Vault, Storage, Log Analytics
-2. **Fabric artifacts** (via postprovision hook):
-    - Workspace, Eventhouse, KQL database
-    - Detection stored functions
-    - Ontology graph tables
-    - `Market_Surveillance` ontology item
-3. **Dashboard** (via azd deploy):
-   - Builds Docker image
-   - Pushes to ACR
-   - Updates Container App
+2. **Fabric tenant settings check** (via preprovision hook):
+   - Verifies `OntologyPreview`
+   - Verifies `RTHAnomalyDetectionTenantSwitch`
+   - Stops early if settings are missing or still propagating
+3. **Fabric artifacts** (via postprovision hook):
+      - Workspace, Eventhouse, KQL database
+      - Detection stored functions
+      - Ontology graph tables
+      - `Market_Surveillance` ontology item (schema)
+4. **Dashboard** (via azd deploy):
+    - Builds Docker image
+    - Pushes to ACR
+    - Updates Container App
 
 ## After Deployment
 
@@ -100,6 +113,18 @@ az resource show \
 ```
 The capacity must be in `Active` state. If paused, resume it in the Azure portal.
 
+### `azd up` stops during tenant-settings verification
+
+**Symptom:** The preprovision hook reports that Fabric tenant settings are
+missing, still propagating, or cannot be read.
+
+**Fix:** Ensure the signed-in identity can call
+`GET /v1/admin/tenantsettings`, then confirm these settings are enabled in the
+Fabric admin portal and wait up to 15 minutes before rerunning `azd up`:
+
+- `Users can create Ontology (preview) items`
+- `Detect anomalies in Real-Time Intelligence (Preview)`
+
 ### Ontology creation fails during postprovision
 
 **Symptom:** `azd up` stops during `deploy-ontology.sh`
@@ -108,6 +133,30 @@ The capacity must be in `Active` state. If paused, resume it in the Azure portal
 tenant has ontology preview enabled. The deployment intentionally fails if the
 ontology item cannot be created, so missing ontology items are surfaced during
 `azd up` instead of being hidden until later review.
+
+### Ontology graph canvas is blank
+
+**Symptom:** The auto-created `Market_Surveillance_graph_<id>` item opens with
+`Nodes (0)` and `Edges (0)`.
+
+**Why:** The current deployment creates the ontology schema, but does not add
+Fabric ontology **data bindings**. Fabric requires static bindings from
+OneLake-backed tables before the graph model can populate entity instances.
+This repo currently stores the market entity master data in Eventhouse KQL
+tables, so the schema is present but the graph canvas remains unbound.
+
+### Anomaly detector creation returns `FeatureNotAvailable`
+
+**Symptom:** `deploy-anomaly-detector.sh` or the Fabric UI fails with
+`FeatureNotAvailable`.
+
+**Why:** The Python plugin is only one prerequisite. Fabric anomaly detection is
+still preview-gated and can remain disabled at the tenant or delegated capacity
+level even after plugin enablement.
+
+**Fix:** Ask a Fabric admin to enable **Detect anomalies in Real-Time
+Intelligence (Preview)** in the Fabric admin portal tenant settings, then wait
+for the change to propagate before retrying detector creation.
 
 ### Dashboard shows "KQL not configured"
 

@@ -11,6 +11,11 @@ services:
       path: ./src/dashboard/Dockerfile
       context: .
 hooks:
+  preprovision:
+    shell: sh
+    run: sh scripts/preprovision.sh
+    interactive: true
+    continueOnError: false
   postprovision:
     shell: sh
     run: scripts/postprovision.sh

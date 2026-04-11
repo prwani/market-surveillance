@@ -27,6 +27,7 @@ for _p in (_SRC_ROOT, _SIM_ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+from fabric_config import derive_ingest_uri, resolve_setting
 from exchange_data_simulator import SimulationEngine
 from agents import (
     Alert,
@@ -49,15 +50,9 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-KQL_URI = os.environ.get(
-    "KQL_URI",
-    "https://trd-z85435m8eppbw7fm7f.z0.kusto.fabric.microsoft.com",
-)
-KQL_INGEST_URI = os.environ.get(
-    "KQL_INGEST_URI",
-    "https://ingest-trd-z85435m8eppbw7fm7f.z0.kusto.fabric.microsoft.com",
-)
-KQL_DB = os.environ.get("KQL_DB", "surveillance")
+KQL_URI = resolve_setting("KQL_URI")
+KQL_INGEST_URI = resolve_setting("KQL_INGEST_URI") or derive_ingest_uri(KQL_URI)
+KQL_DB = resolve_setting("KQL_DB") or "surveillance"
 
 
 def generate_events():
@@ -335,6 +330,11 @@ def main():
         print("\n[4/5] SKIPPED")
         print("\n[5/5] Python pipeline test PASSED ✓")
         print(f"\n  To run full Fabric test, install dependencies and re-run.")
+        return
+
+    if not KQL_URI:
+        print("\n[3/5] SKIPPED — KQL_URI not configured")
+        print("  Set KQL_URI, or select the correct azd environment before running.")
         return
 
     # Step 3: Ingest into Fabric Eventhouse
